@@ -58,6 +58,7 @@ The skill emphasizes:
 2. **Atomic commits**: Each commit should represent one logical change
 3. **Commit quality preservation**: Leverage jj's mutability to refine commits
 4. **Clean history**: Use `squash`, `split`, and `absorb` to maintain a readable history
+5. **Protect completed work**: Always run `jj new` when done so `@` is on a fresh empty revision instead of sitting on the completed commit
 
 ## Contributing
 

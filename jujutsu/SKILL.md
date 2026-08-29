@@ -35,6 +35,8 @@ Editor-based commands will fail in non-interactive environments.
 
 3. **Verify operations with `jj st`** after mutations (`squash`, `abandon`, `rebase`, `restore`) to confirm the operation succeeded.
 
+4. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
+
 ## Core Concepts
 
 ### The Working Copy is a Commit
@@ -136,6 +138,17 @@ jj prev -e
 # Edit the next commit
 jj next -e
 ```
+
+### Finishing Work: Always Advance to a New Empty Commit (`jj new`)
+
+**CRITICAL**: When you finish your task, refine a commit, or complete a change:
+
+```bash
+# Always run jj new when finished to protect the completed commit
+jj new
+```
+
+Because jj automatically records changes into the current working-copy commit (`@`), leaving `@` on your completed commit means any subsequent command, agent action, or manual file edit will silently mutate it. Running `jj new` moves `@` to a fresh, empty child commit, safely preserving your completed work.
 
 ## Refining Commits
 
@@ -381,6 +394,7 @@ jj st
 3. **Is the message clear?** Use imperative verb phrase in sentence case format with no full stop: e.g. "Add login endpoint", "Fix null pointer in payment processor", "Remove deprecated API endpoints"
 4. **Are there unrelated changes?** Use `jj restore` to move changes out, then create separate commits
 5. **Should changes be elsewhere?** Use `jj squash` or `jj absorb`
+6. **Protect the completed commit**: Always run `jj new` when done so `@` is on a fresh empty revision rather than sitting directly on your finished commit
 
 ## Quick Reference
 
@@ -413,3 +427,4 @@ jj st
 3. **Use change IDs**: They're stable across rewrites
 4. **Refine commits**: Leverage mutability for clean history
 5. **Embrace the workflow**: No staging area, no stashing - just commits
+6. **Always finish with `jj new`**: Protect completed work by advancing `@` to a new empty revision
