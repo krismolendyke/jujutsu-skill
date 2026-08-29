@@ -241,17 +241,23 @@ This makes recovering from complex multi-step mistakes (like a sequence of bad r
 Move commits to a different parent:
 
 ```bash
-# Rebase current branch onto a destination
-jj rebase -d <destination>
+# Rebase the entire current stack/branch onto main (common update workflow)
+jj rebase -d main
+# Or explicitly by branch/stack:
+jj rebase -b @ -d main
 
-# Rebase a specific revision (without descendants) onto a destination
-jj rebase -r <change-id> -d <destination>
-
-# Rebase a revision and all its descendants
+# Rebase a specific revision and all its descendants onto a destination
 jj rebase -s <change-id> -d <destination>
 
-# Rebase onto trunk (common: update your branch to latest main)
-jj rebase -d main
+# Rebase a whole stack using roots revset
+jj rebase -s 'roots(trunk()..@)' -d main
+
+# Rebase ONLY a single revision (rebasing its descendants onto its parents)
+jj rebase -r <change-id> -d <destination>
+
+# Insert a commit before or after another revision
+jj rebase -r <change-id> -A <target-commit>   # insert after target
+jj rebase -r <change-id> -B <target-commit>   # insert before target
 ```
 
 ### Restoring Files
