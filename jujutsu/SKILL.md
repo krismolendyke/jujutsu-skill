@@ -154,11 +154,24 @@ Because jj automatically records changes into the current working-copy commit (`
 
 ### Squashing Changes
 
-Move changes from current commit into its parent:
+Move changes from one revision into another without having to manually rebase:
 
 ```bash
-# Squash all changes into parent
+# Squash all changes from current commit into its parent
 jj squash
+
+# Squash changes into a specific ancestor commit
+jj squash --into <change-id>
+
+# Squash only specific files into an ancestor commit
+jj squash --into <change-id> path/to/file.txt
+
+# Pull changes from another revision into the current commit
+jj squash --from <change-id>
+
+# Keep destination description without editor prompt (or supply new message with -m)
+jj squash --into <change-id> -u
+jj squash --into <change-id> -m "Updated commit message"
 ```
 
 **Note**: `jj squash -i` opens an interactive UI and will hang in agent environments. Avoid it.
