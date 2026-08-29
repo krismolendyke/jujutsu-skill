@@ -37,6 +37,8 @@ Editor-based commands will fail in non-interactive environments.
 
 4. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
 
+5. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
+
 ## Core Concepts
 
 ### The Working Copy is a Commit
@@ -45,9 +47,11 @@ In jj, your working directory is always a commit (referenced as `@`). Changes ar
 
 There is no need to run `jj commit`.
 
-### Commits Are Mutable
+### Commits Are Mutable (Except Immutable Heads)
 
-**CRITICAL**: Unlike git, jj commits can be freely modified after creation. You can update descriptions, squash changes, rebase, and absorb — all without creating new commits. See "Essential Workflow" below for the recommended working pattern.
+**CRITICAL**: Unlike git, jj commits can be freely modified after creation. You can update descriptions, squash changes, rebase, and absorb — all without creating new commits.
+
+However, certain revisions (such as `trunk()`, `main`, or pushed remote commits) are marked as **immutable** (`immutable()` revset) to prevent altering shared history. Agents must never attempt to rewrite immutable commits or pass `--ignore-immutable`; instead, always branch off with `jj new <base>`.
 
 ### Change IDs vs Commit IDs
 
