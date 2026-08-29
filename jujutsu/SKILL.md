@@ -291,6 +291,21 @@ jj restore path/to/file.txt
 jj restore --from <change-id> path/to/file.txt
 ```
 
+### Inspecting and Tracking Files (`jj file`)
+
+Inspect file state at specific historical revisions without switching branches or checking out working copies:
+
+```bash
+# List all tracked files at a specific revision
+jj --no-pager file list -r <change-id>
+
+# Print file contents from a specific historical revision directly to stdout
+jj --no-pager file show -r <change-id> path/to/file.txt
+
+# Stop tracking a file without deleting it from the filesystem
+jj file untrack path/to/file.txt
+```
+
 ## Working with Bookmarks (Branches)
 
 Bookmarks are jj's equivalent to git branches.
