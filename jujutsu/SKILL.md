@@ -41,11 +41,21 @@ Editor-based commands will fail in non-interactive environments.
 
 ## Core Concepts
 
-### The Working Copy is a Commit
+### The Working Copy is a Commit (`@` vs `@-`)
 
 In jj, your working directory is always a commit (referenced as `@`). Changes are automatically snapshotted when you run any jj command. There is no staging area.
 
-There is no need to run `jj commit`.
+- **`jj desc -m "..."`**: Labels the current working-copy commit `@`.
+- **`jj new`**: Creates a fresh, empty commit on top of `@` (the previous commit becomes `@-`).
+- **`jj commit -m "..."`**: A convenient one-step shortcut for `jj desc -m "..." && jj new`.
+
+#### The `@` vs `@-` Rule (Where Your Finished Commit Lives)
+
+| Workflow Pattern | Where Your Labeled Commit Is | Bookmark / Push Target |
+| :--- | :--- | :--- |
+| `jj desc -m "..."` (before `jj new`) | `@` | `-r @` |
+| `jj commit -m "..."` | `@-` (new empty `@` is created) | `-r @-` |
+| `jj desc -m "..."` then `jj new` | `@-` (new empty `@` is created) | `-r @-` |
 
 ### Commits Are Mutable (Except Immutable Heads)
 
