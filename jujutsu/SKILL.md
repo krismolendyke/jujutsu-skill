@@ -408,7 +408,10 @@ jj git push -b main
 # Safely set (create or move) bookmark to the current commit
 jj bookmark set my-feature -r @
 
-# Then push it
+# Verify what will change on the remote without executing the push
+jj git push --dry-run -b my-feature
+
+# Push the bookmark to remote
 jj git push -b my-feature
 ```
 
