@@ -571,6 +571,55 @@ jj abandon <obsolete-commit-id>
 jj squash --from <source-commit-id> --into <target-commit-id>
 ```
 
+## Megamerges (Multi-Branch Integration & Testing)
+
+A **megamerge** is a local octopus merge commit whose parents are multiple in-flight WIP branches. It allows you to build, test, and run an entire application with multiple independent features applied simultaneously.
+
+```
+        (Combined working copy / tests)
+                       │
+                       ●  megamerge (octopus, local-only)
+                     ╱ │ ╲
+                    ●  ●  ●  feature-a, feature-b, feature-c
+                     ╲ │ ╱
+                       ●  trunk()
+```
+
+### 1. Creating a Megamerge
+
+```bash
+# Create an octopus merge commit across multiple branches
+jj new feature-a feature-b feature-c -m "Local megamerge (test only)"
+
+# Advance working copy on top of it
+jj new
+```
+
+### 2. Testing & Propagating Changes
+
+- Run test suites in the combined working copy to confirm that all branches compose cleanly.
+- Use `jj absorb` to distribute fixes from `@` back into whichever parent feature branch last modified the affected lines:
+```bash
+jj absorb
+```
+
+### 3. Restacking onto Updated Trunk
+
+When trunk updates, rebase all mutable branches in one command while collapsing redundant edges with `--simplify-parents`:
+
+```bash
+jj rebase --onto trunk() --source 'roots(trunk()..) & mutable()' --simplify-parents
+```
+
+### 4. Pushing from a Megamerge
+
+**CRITICAL**: You never push the megamerge itself. Push each component bookmark individually:
+
+```bash
+jj git push -b feature-a
+jj git push -b feature-b
+```
+
 ## Preserving Commit Quality
 
 **IMPORTANT**: Because commits are mutable, always refine them before considering work done:
