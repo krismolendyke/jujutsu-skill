@@ -60,20 +60,21 @@ However, certain revisions (such as `trunk()`, `main`, or pushed remote commits)
 
 ### Revsets
 
-jj uses a revset language to select commits in commands. Common revsets:
+jj uses a rich functional revset language to query and select commits:
 
-- `@` — the working copy commit
-- `@-` — the parent of the working copy
-- `::@` — all ancestors of `@`
-- `@::` — all descendants of `@`
-- `trunk()..@` — commits between trunk and `@` (your branch)
-- `bookmarks()` — all commits with bookmarks
-- `conflicts()` — commits containing unresolved merge conflicts
-- `divergent()` — commits with divergent change IDs (`??`)
-- `empty() & ~root()` — empty commits (useful for cleanup)
-- `immutable()` — commits protected from rewriting (e.g., trunk/pushed heads)
+| Intent | Revset Expression | Description |
+|--------|-------------------|-------------|
+| **Current Stack** | `trunk()..@` | All commits on current branch since trunk |
+| **Stack Tip** | `heads(trunk()..@)` | Top-most commit of the current branch |
+| **Stack Root** | `roots(trunk()..@)` | Base commit of the current branch |
+| **Recent History** | `ancestors(@, 5)` | Last 5 commits leading up to `@` |
+| **Conflicts** | `conflicts()` | Commits containing unresolved merge conflicts |
+| **Divergent** | `divergent()` | Commits with split Change IDs (`??`) |
+| **Empty Commits** | `empty() & ~root()` | Empty commits (useful for cleanup) |
+| **Immutable** | `immutable()` | Commits protected from rewriting |
+| **Bookmarks** | `bookmarks()` | Commits marked with bookmarks |
 
-Use revsets with `-r` flags: `jj log -r 'trunk()..@'` or `jj log -r 'conflicts()'`.
+Use revsets with `-r` flags: `jj --no-pager log -r 'trunk()..@'` or `jj --no-pager log -r 'conflicts()'`.
 
 ## Essential Workflow
 
@@ -530,12 +531,16 @@ jj squash --from <source-commit-id> --into <target-commit-id>
 | Squash to parent | `jj squash` |
 | Auto-distribute | `jj absorb` |
 | Rebase | `jj rebase -d <destination>` |
+| Parallelize revisions | `jj parallelize <revisions>` |
 | Abandon commit | `jj abandon <id>` |
 | Undo last operation | `jj undo` |
 | Redo operation | `jj redo` |
 | View operation log | `jj --no-pager op log -n 10` |
 | Restore to operation | `jj op restore <operation-id>` |
 | Restore files | `jj restore [paths]` |
+| List files at rev | `jj --no-pager file list -r <id>` |
+| Show file content | `jj --no-pager file show -r <id> <path>` |
+| Untrack file | `jj file untrack <path>` |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Advance bookmark | `jj bookmark advance [--to <target>]` |
 | Fetch remote | `jj git fetch` |
