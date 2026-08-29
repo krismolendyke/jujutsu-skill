@@ -14,12 +14,12 @@ This skill helps you work with Jujutsu, a Git-compatible VCS with mutable commit
 
 When running as an agent:
 
-1. **Always use `--no-pager`** to prevent commands from opening an interactive pager (like `less`), which will hang the agent:
+1. **Always use `--no-pager` and explicit subcommands**: Never invoke bare `jj` (which triggers user-configured `ui.default-command`). Always pass explicit subcommands and `--no-pager` to prevent commands from opening an interactive pager (like `less`), which will hang the agent:
 
 ```bash
 # Always use --no-pager on commands that produce output
-jj --no-pager log          # NOT: jj log
-jj --no-pager diff         # NOT: jj diff
+jj --no-pager log          # NOT: jj log or bare jj
+jj --no-pager diff --git   # NOT: jj diff (always include --git)
 jj --no-pager show <id>    # NOT: jj show <id>
 ```
 
@@ -131,7 +131,9 @@ jj --no-pager show <change-id>
 jj --no-pager diff --git
 ```
 
-**IMPORTANT: `jj diff` output format**: The default `jj diff` output uses a side-by-side line number format (e.g. `26   26:`) that looks very different from git's `+`/`-` prefix format. This is **normal and correct** — it is NOT corrupted or showing stale content. However, to avoid confusion, **always use `jj diff --git`** to get standard unified diff format with `+`/`-` lines.
+**IMPORTANT: Why `jj diff --git` is required**:
+1. Default `jj diff` uses a side-by-side line number format (e.g. `26   26:`) rather than standard unified diff format.
+2. User configurations often set `ui.diff-formatter` to external diff tools (e.g. Difftastic or Delta). Adding `--git` bypasses external tools and guarantees a clean, machine-parseable unified diff with standard `+`/`-` line prefixes.
 
 ### Moving Between Commits
 
