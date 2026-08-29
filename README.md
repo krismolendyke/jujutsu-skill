@@ -59,21 +59,46 @@ This skill is designed for `jj v0.44.0` and may work with other versions, though
 If you use [just](https://just.systems), run:
 
 ```bash
+# Install globally for all supported assistants (Claude Code & Antigravity)
 just install
+
+# Or install for a specific assistant
+just install-claude
+just install-antigravity
 ```
 
 ### Manual Installation
 
-Copy the `jujutsu/` directory into your project's `.claude/skills/` directory:
+#### Claude Code
+
+Install globally:
 
 ```bash
-cp -r jujutsu/ /path/to/your/project/.claude/skills/jujutsu/
+mkdir -p ~/.claude/skills
+cp -r jujutsu/ ~/.claude/skills/jujutsu/
 ```
 
-Or install it globally:
+Or install locally in a specific project:
 
 ```bash
-cp -r jujutsu/ ~/.claude/skills/jujutsu/
+mkdir -p .claude/skills
+cp -r jujutsu/ .claude/skills/jujutsu/
+```
+
+#### Antigravity / Gemini CLI
+
+Install globally:
+
+```bash
+mkdir -p ~/.gemini/config/skills
+cp -r jujutsu/ ~/.gemini/config/skills/jujutsu/
+```
+
+Or install locally in a specific workspace:
+
+```bash
+mkdir -p .gemini/skills
+cp -r jujutsu/ .gemini/skills/jujutsu/
 ```
 
 ## Skill Contents
