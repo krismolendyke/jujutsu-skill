@@ -1,5 +1,4 @@
-help: 
-    @just --list
+set default-list := true
 
-install: 
+install:
     cp -r ./jujutsu/ ~/.claude/skills/jujutsu
