@@ -229,20 +229,28 @@ jj restore --from <change-id> path/to/file.txt
 
 ## Working with Bookmarks (Branches)
 
-Bookmarks are jj's equivalent to git branches:
+Bookmarks are jj's equivalent to git branches.
+
+**Agent Tip (Idempotent Bookmark Setting)**: Use `jj bookmark set <name> -r <revset>` (defaults to `-r @`). If the bookmark exists, it moves it; if not, it creates it. This avoids errors from calling `create` on existing bookmarks or `move` on new ones.
 
 ```bash
-# Create a bookmark at current commit
-jj bookmark create my-feature -r@
+# Create or move bookmark to current commit (idempotent - recommended for agents)
+jj bookmark set my-feature -r @
 
-# Move bookmark to a different commit
+# Explicitly create a new bookmark
+jj bookmark create my-feature -r @
+
+# Move an existing bookmark to a different commit
 jj bookmark move my-feature --to <change-id>
 
 # List bookmarks
 jj --no-pager bookmark list
 
-# Delete a bookmark
+# Delete a bookmark (marks deletion to push to remote)
 jj bookmark delete my-feature
+
+# Forget a bookmark (removes locally without pushing deletion)
+jj bookmark forget my-feature
 ```
 
 ## Workspaces
@@ -354,21 +362,11 @@ jj git push -b main
 2. The commits are refined and atomic
 3. The user has explicitly requested the push
 
-**IMPORTANT**: Unlike git branches, jj bookmarks do not automatically move when you create new commits. You must manually update them before pushing:
+**IMPORTANT**: Unlike git branches, jj bookmarks do not automatically move when you create new commits. Use `jj bookmark set` to safely create or move the bookmark before pushing:
 
 ```bash
-# Move an existing bookmark to the current commit
-jj bookmark move my-feature --to @
-
-# Then push it
-jj git push -b my-feature
-```
-
-If no bookmark exists for your changes, create one first:
-
-```bash
-# Create a bookmark at the current commit
-jj bookmark create my-feature
+# Safely set (create or move) bookmark to the current commit
+jj bookmark set my-feature -r @
 
 # Then push it
 jj git push -b my-feature
@@ -412,7 +410,7 @@ jj st
 | Abandon commit | `jj abandon <id>` |
 | Undo last operation | `jj undo` |
 | Restore files | `jj restore [paths]` |
-| Create bookmark | `jj bookmark create <name>` |
+| Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Fetch remote | `jj git fetch` |
 | Push bookmark | `jj git push -b <name>` |
 | Add workspace | `jj workspace add <path>` |
