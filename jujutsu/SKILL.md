@@ -276,6 +276,18 @@ jj rebase -r <change-id> -A <target-commit>   # insert after target
 jj rebase -r <change-id> -B <target-commit>   # insert before target
 ```
 
+### Parallelizing Revisions (`jj parallelize`)
+
+When multiple changes in a linear stack are independent and do not depend on each other, make them sibling branches off their shared parent:
+
+```bash
+# Convert sequential revisions into parallel siblings off their common base
+jj parallelize <change-A> <change-B>
+
+# Parallelize all commits in current stack
+jj parallelize 'trunk()..@'
+```
+
 ### Restoring Files
 
 Discard changes to specific files or restore files from another revision:
