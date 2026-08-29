@@ -1,35 +1,61 @@
 # jj VCS Agent Skill
 
-An Agent Skill that helps AI coding agents work with the Jujutsu (jj) version control system.
+An Agent Skill that empowers AI coding assistants (Claude Code, Antigravity, and other compatible agents) to work reliably, safely, and effectively with the [Jujutsu (jj)](https://github.com/jj-vcs/jj) version control system.
 
 ## Overview
 
-This repository provides an Agent Skill for Claude Code and other compatible AI agents to effectively use the Jujutsu VCS. The skill teaches agents the proper workflow and commands for creating atomic, well-documented commits using jj.
+Working with Jujutsu in automated or agentic coding environments requires specific patterns to avoid interactive hangs, accidental commit pollution, or tree corruption. This skill equips agents with:
+
+- **Agent-Safe Execution**: Non-interactive command patterns that bypass pagers, external diff formatters, and interactive editors.
+- **Describe-First Philosophy**: Proper workflow for creating atomic, well-documented changes with title/body formatting.
+- **State Protection**: Automatic advancement to clean working-copy commits (`jj new`) to safeguard completed revisions from accidental mutation.
+- **Robust Tree Manipulation**: Stack rebasing, revision parallelization, targeted squashing, and disaster recovery via the operation log.
 
 ## Compatibility
 
-**Tested with:** jj v0.44.0
+**Tested with:** `jj v0.44.0`
 
-This skill is designed for jj v0.44.0 and may work with other versions, though compatibility is not guaranteed.
+This skill is designed for `jj v0.44.0` and may work with other versions, though compatibility is not guaranteed.
 
-## What is Jujutsu?
+## Key Skill Features & Agent Guardrails
 
-Jujutsu (jj) is a Git-compatible version control system that offers several advantages:
+### 1. Automated Environment Safeguards
+- **Pager & Subcommand Isolation**: Mandates `--no-pager` and explicit subcommands to prevent hangs and bypass user-configured `ui.default-command`.
+- **Clean Unified Diffs**: Enforces `jj --no-pager diff --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
+- **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags for structured title and body paragraphs) to avoid editor prompts.
+- **Strict Immutability**: Prohibits `--ignore-immutable` and enforces branching off protected heads (`main`, trunk, remote tracking) via `jj new <base>`.
 
-- **Working copy as a commit**: The working directory is always a commit, automatically snapshotting changes
-- **No staging area**: Changes are moved directly between commits using `squash` and `split`
-- **Automatic rebasing**: Descendant commits are automatically rebased when parent commits change
-- **Mutable commits**: Commits can be freely edited, split, and squashed
-- **Change IDs**: Stable identifiers that persist across commit rewrites
-- **Conflict handling**: Conflicts can be committed and resolved later
+### 2. State & Commit Protection (`jj new`)
+- **Always Park on a Fresh Revision**: Mandates that agents run `jj new` upon completing a task or revision, ensuring `@` is never left on the finished commit where subsequent operations or manual CLI commands could silently mutate it.
+
+### 3. Idempotent Bookmark & Branch Management
+- **Safe Bookmark Updates**: Recommends `jj bookmark set <name> -r <target>` (which creates or moves bookmarks idempotently without erroring).
+- **Bookmark Advancing**: Covers built-in `jj bookmark advance` to slide bookmarks forward along stacks.
+- **Push Previews**: Encourages `jj git push --dry-run -b <name>` to inspect remote modifications before pushing.
+
+### 4. Advanced Tree Manipulation & History Refinement
+- **Targeted Squashing**: Move changes directly into/from specific revisions without full rebases (`jj squash --into <id>`, `jj squash --from <id>`, `-u`).
+- **Parallelizing Commits**: Convert sequential, orthogonal commits into parallel sibling branches off a common parent with `jj parallelize`.
+- **Stack Rebasing**: Idiomatic branch and stack rebasing onto trunk with `jj rebase -b @ -d main` and roots revsets.
+
+### 5. Multi-Step Disaster Recovery
+- **Operation Log Rollback**: Instant repository restoration to any prior state using `jj --no-pager op log` and `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
+
+### 6. Historical Inspection & Revset Recipes
+- **File Inspection**: Query tracked files and read historical contents directly from stdout (`jj file list -r <id>`, `jj file show -r <id> <path>`).
+- **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), and empty commit cleanup.
 
 ## Installation
 
-If you use [just](just.systems), you can run:
+### Using `just`
 
-```
+If you use [just](https://just.systems), run:
+
+```bash
 just install
 ```
+
+### Manual Installation
 
 Copy the `jujutsu/` directory into your project's `.claude/skills/` directory:
 
@@ -37,7 +63,7 @@ Copy the `jujutsu/` directory into your project's `.claude/skills/` directory:
 cp -r jujutsu/ /path/to/your/project/.claude/skills/jujutsu/
 ```
 
-Or install it as a global skill:
+Or install it globally:
 
 ```bash
 cp -r jujutsu/ ~/.claude/skills/jujutsu/
@@ -47,22 +73,12 @@ cp -r jujutsu/ ~/.claude/skills/jujutsu/
 
 ```
 jujutsu/
-└── SKILL.md    # Main skill file with jj workflow instructions
+└── SKILL.md    # Complete jj agent workflow instructions and quick reference
 ```
-
-## Key Workflow Philosophy
-
-The skill emphasizes:
-
-1. **Describe-first commits**: Use `jj desc -m "message"` before making changes
-2. **Atomic commits**: Each commit should represent one logical change
-3. **Commit quality preservation**: Leverage jj's mutability to refine commits
-4. **Clean history**: Use `squash`, `split`, and `absorb` to maintain a readable history
-5. **Protect completed work**: Always run `jj new` when done so `@` is on a fresh empty revision instead of sitting on the completed commit
 
 ## Contributing
 
-Contributions are welcome. Please ensure any changes are compatible with jj v0.44.0.
+Contributions are welcome. Please ensure any changes are compatible with `jj v0.44.0` and follow agent-safe non-interactive practices.
 
 ## License
 
