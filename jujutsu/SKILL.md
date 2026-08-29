@@ -285,6 +285,10 @@ jj bookmark create my-feature -r @
 # Move an existing bookmark to a different commit
 jj bookmark move my-feature --to <change-id>
 
+# Advance the closest bookmark forward along the stack (to @ or specific target)
+jj bookmark advance
+jj bookmark advance --to @-
+
 # List bookmarks
 jj --no-pager bookmark list
 
@@ -484,6 +488,7 @@ jj squash --from <source-commit-id> --into <target-commit-id>
 | Restore to operation | `jj op restore <operation-id>` |
 | Restore files | `jj restore [paths]` |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
+| Advance bookmark | `jj bookmark advance [--to <target>]` |
 | Fetch remote | `jj git fetch` |
 | Push bookmark | `jj git push -b <name>` |
 | Add workspace | `jj workspace add <path>` |
