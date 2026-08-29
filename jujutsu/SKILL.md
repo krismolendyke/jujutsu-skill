@@ -398,6 +398,60 @@ In `jj log`, each workspace's `@` appears as `<workspace-name>@`.
 - Don't `jj edit` a change another workspace already has as its `@` — main cause of accidental divergence.
 - Don't `rm -rf` a workspace directory without also running `jj workspace forget <name>`.
 
+### Multi-Agent Coordinator Playbook
+
+When coordinating a team of parallel subagents, use `jj workspace` to give each agent an isolated working copy attached to the same repository.
+
+#### 1. Setup from Coordinator Workspace
+
+```bash
+# Bring main up to date
+jj git fetch
+jj rebase -d main@origin
+
+# CRITICAL: PIN the exact base commit hash (never use floating 'main')
+BASE=$(jj log -r main -T 'commit_id' --no-graph)
+
+# Create isolated workspaces for each agent rooted at $BASE
+jj workspace add ../agent-db --revision "$BASE"
+jj workspace add ../agent-ui --revision "$BASE"
+jj workspace add ../agent-api --revision "$BASE"
+
+# Verify
+jj --no-pager workspace list
+```
+
+#### 2. Brief Each Agent with Explicit Contracts
+
+Instruct each parallel agent:
+- Workspace path: e.g. `cd /path/to/agent-db`
+- Scope: e.g. "Only touch files in `db/`"
+- Boundary rules: Never run `jj edit`, `jj squash`, or `jj rebase` on other workspaces. Never touch shared bookmarks (`main`).
+- Finish contract: Label changes with `jj desc -m "db: add user schema"` and stop.
+
+#### 3. Merge Back & Cleanup (from Coordinator Workspace)
+
+```bash
+# 1. Verify independent diffs
+jj --no-pager diff --stat -r <agent-db-commit>
+jj --no-pager diff --stat -r <agent-ui-commit>
+
+# 2. Rebase cleanly onto main
+jj rebase -s <agent-db-commit> -d main
+jj rebase -s <agent-ui-commit> -d main
+
+# 3. Update bookmark and push
+jj bookmark set main -r @-
+jj git push --dry-run -b main
+jj git push -b main
+
+# 4. Clean up workspace pointers and disk directories
+jj workspace forget agent-db
+jj workspace forget agent-ui
+jj workspace forget agent-api
+rm -rf ../agent-db ../agent-ui ../agent-api
+```
+
 ## Git Integration
 
 ### Working with Existing Git Repos
