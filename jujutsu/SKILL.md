@@ -64,8 +64,12 @@ jj uses a revset language to select commits in commands. Common revsets:
 - `@::` — all descendants of `@`
 - `trunk()..@` — commits between trunk and `@` (your branch)
 - `bookmarks()` — all commits with bookmarks
+- `conflicts()` — commits containing unresolved merge conflicts
+- `divergent()` — commits with divergent change IDs (`??`)
+- `empty() & ~root()` — empty commits (useful for cleanup)
+- `immutable()` — commits protected from rewriting (e.g., trunk/pushed heads)
 
-Use revsets with `-r` flags: `jj log -r 'trunk()..@'`
+Use revsets with `-r` flags: `jj log -r 'trunk()..@'` or `jj log -r 'conflicts()'`.
 
 ## Essential Workflow
 
@@ -418,6 +422,31 @@ jj st
 ```
 
 **Agent conflict resolution**: Do not use `jj resolve` (interactive). Instead, edit the conflicted files directly to remove conflict markers, then run `jj st` to verify resolution.
+
+## Handling Divergent Commits
+
+Divergence happens when the same Change ID has multiple conflicting commit versions (often marked as `<change-id> ??` in `jj log`). This usually occurs when a change is modified concurrently in two workspaces or operations.
+
+### Diagnosing Divergence
+
+```bash
+# Find all divergent commits across the repository
+jj --no-pager log -r 'divergent()'
+```
+
+### Resolving Divergence
+
+To resolve divergent commits, choose one of these strategies depending on intent:
+
+1. **Keep one version and discard the other**: Use the specific **Commit ID** (not Change ID) to abandon the obsolete version:
+```bash
+jj abandon <obsolete-commit-id>
+```
+
+2. **Combine both versions**: Squash changes from one version into the other using specific Commit IDs:
+```bash
+jj squash --from <source-commit-id> --into <target-commit-id>
+```
 
 ## Preserving Commit Quality
 
