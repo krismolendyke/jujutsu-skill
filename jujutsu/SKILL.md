@@ -119,6 +119,18 @@ Examples:
 - "Update dependencies to latest versions"
 ```
 
+### Multi-line Descriptions (Chaining `-m` Flags)
+
+To write multi-paragraph commit messages without opening an editor or risking shell escaping issues, pass multiple `-m` flags. `jj` automatically separates each `-m` with a blank line (title and body paragraphs):
+
+```bash
+# First -m is the title, subsequent -m flags are body paragraphs
+jj desc \
+  -m "Add OAuth2 authentication provider" \
+  -m "Introduce Google and GitHub OAuth handlers with token refresh." \
+  -m "- Implement callback router\n- Add token refresh middleware"
+```
+
 ### Viewing History
 
 ```bash
