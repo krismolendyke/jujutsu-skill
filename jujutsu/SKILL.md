@@ -89,6 +89,25 @@ jj uses a rich functional revset language to query and select commits:
 
 Use revsets with `-r` flags: `jj --no-pager log -r 'trunk()..@'` or `jj --no-pager log -r 'conflicts()'`.
 
+### Machine-Readable Template Queries (`-T` / `--template`)
+
+Agents and scripts can extract specific commit metadata programmatically without terminal graph characters or regex parsing by combining `-T` with `--no-graph`:
+
+```bash
+# Query stable Change ID or Commit Hash of @
+CHANGE_ID=$(jj log -r @ -T 'change_id' --no-graph)
+COMMIT_ID=$(jj log -r @ -T 'commit_id' --no-graph)
+
+# Check if working copy has changes (outputs "true" or "false")
+IS_EMPTY=$(jj log -r @ -T 'empty' --no-graph)
+
+# Check if commit is protected / immutable (outputs "true" or "false")
+IS_IMMUTABLE=$(jj log -r @ -T 'immutable' --no-graph)
+
+# Query commit description title (first line)
+TITLE=$(jj log -r @ -T 'description.first_line()' --no-graph)
+```
+
 ## Essential Workflow
 
 ### Starting Work: Describe First, Then Code
@@ -266,6 +285,18 @@ Remove a commit entirely (descendants are rebased to its parent):
 jj abandon <change-id>
 ```
 
+### Duplicating Revisions (`jj duplicate`)
+
+Create an exact copy of an existing revision with a brand new Change ID. This is useful for exploratory refactorings, prototype spikes, or preserving a snapshot before destructive tests:
+
+```bash
+# Duplicate a specific revision (creates a sibling commit with a fresh Change ID)
+jj duplicate <change-id>
+
+# Duplicate the working commit @ or parent @-
+jj duplicate @-
+```
+
 ### Undoing Operations and Multi-Step Recovery
 
 Jujutsu records every repo mutation in an append-only operation log.
@@ -352,6 +383,13 @@ jj --no-pager file show -r <change-id> path/to/file.txt
 jj file untrack path/to/file.txt
 ```
 
+### Ignoring Files (`.gitignore` vs `.jj/ignore`)
+
+Jujutsu respects standard `.gitignore` files in the repository. In addition, you can specify local-only ignore rules:
+
+- **`.gitignore`**: Tracked in git, shared across all repository clones and team members.
+- **`.jj/ignore`**: Untracked, private to your local clone. Use `.jj/ignore` for agent scratchpads, temporary debug dumps, or local tools that should never be committed to git.
+
 ## Working with Bookmarks (Branches)
 
 Bookmarks are jj's equivalent to git branches.
@@ -380,6 +418,12 @@ jj bookmark delete my-feature
 
 # Forget a bookmark (removes locally without pushing deletion)
 jj bookmark forget my-feature
+
+# Track a remote bookmark locally (e.g. from git remote)
+jj bookmark track my-feature@origin
+
+# Untrack a remote bookmark (stops synchronizing with remote)
+jj bookmark untrack my-feature@origin
 ```
 
 ## Workspaces
@@ -420,6 +464,25 @@ In `jj log`, each workspace's `@` appears as `<workspace-name>@`.
 - Always pass `--no-pager` to `jj workspace list`.
 - Don't `jj edit` a change another workspace already has as its `@` — main cause of accidental divergence.
 - Don't `rm -rf` a workspace directory without also running `jj workspace forget <name>`.
+
+### Sparse Workspaces (`jj sparse`)
+
+For large repositories or multi-agent workflows, sparse checkouts limit the files materialized in a workspace to reduce disk I/O and index overhead:
+
+```bash
+# List active sparse checkout patterns
+jj --no-pager sparse list
+
+# Restrict workspace to specific directories
+jj sparse set --clear --add src/ --add packages/backend/
+
+# Add or remove directory patterns
+jj sparse set --add packages/frontend/
+jj sparse set --remove legacy/
+
+# Reset sparse configuration to checkout the entire repo
+jj sparse set --reset
+```
 
 ### Multi-Agent Coordinator Playbook
 
@@ -557,6 +620,12 @@ jj git push --dry-run -b my-feature
 
 # Push the bookmark to remote
 jj git push -b my-feature
+
+# Push bookmark explicitly to a specified remote
+jj git push --bookmark my-feature --remote origin
+
+# Push a revision directly by change ID
+jj git push -c <change-id>
 ```
 
 ## Handling Conflicts
@@ -669,6 +738,7 @@ jj git push -b feature-b
 | Auto-distribute | `jj absorb` |
 | Rebase | `jj rebase -d <destination>` |
 | Parallelize revisions | `jj parallelize <revisions>` |
+| Duplicate revision | `jj duplicate <id>` |
 | Abandon commit | `jj abandon <id>` |
 | Undo last operation | `jj undo` |
 | Redo operation | `jj redo` |
@@ -680,12 +750,17 @@ jj git push -b feature-b
 | Untrack file | `jj file untrack <path>` |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Advance bookmark | `jj bookmark advance [--to <target>]` |
+| Track remote bookmark | `jj bookmark track <name>@<remote>` |
+| Untrack remote bookmark | `jj bookmark untrack <name>@<remote>` |
 | Fetch remote | `jj git fetch` |
 | Push bookmark | `jj git push -b <name>` |
+| Push change ID | `jj git push -c <id>` |
 | Add workspace | `jj workspace add <path>` |
 | List workspaces | `jj --no-pager workspace list` |
 | Forget workspace | `jj workspace forget [name]` |
 | Fix stale working copy | `jj workspace update-stale` |
+| List sparse patterns | `jj --no-pager sparse list` |
+| Set sparse patterns | `jj sparse set --add <paths>` |
 
 ## Best Practices Summary
 
