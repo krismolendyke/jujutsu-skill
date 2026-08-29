@@ -73,14 +73,23 @@ Use revsets with `-r` flags: `jj log -r 'trunk()..@'`
 
 **Always create your commit message before writing code:**
 
-Validate that you're on a blank revision with `jj st`. If you are not, you should type:
+1. **Branching off trunk/main or a specific base**: When starting independent work, create your new revision directly off your intended base (e.g. `main` or a specific commit) rather than accidentally stacking on your current working revision:
 
 ```bash
-jj new
+# Start independent work directly off main/trunk with message
+jj new main -m "Add user authentication to login endpoint"
+
+# Or off any specific revision
+jj new <change-id> -m "Add validation to user input forms"
 ```
 
+2. **Continuing on current branch**: If working on top of the current revision, validate that `@` is empty with `jj st`. If it is not empty, run `jj new` first:
+
 ```bash
-# First, describe what you intend to do
+# Ensure you are on a blank commit
+jj new
+
+# Describe what you intend to do
 jj desc -m "Add user authentication to login endpoint"
 
 # Then make your changes - they automatically become part of this commit
@@ -126,8 +135,12 @@ jj --no-pager diff --git
 # Create a new empty commit on top of current
 jj new
 
-# Create new commit with message
+# Create new commit with message on top of current
 jj new -m "Commit message"
+
+# Create new commit branching off a specific base
+jj new main -m "New branch off main"
+jj new <base-change-id> -m "New branch off base"
 
 # Edit an existing commit (working copy becomes that commit)
 jj edit <change-id>
