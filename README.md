@@ -8,9 +8,9 @@ This repository provides an Agent Skill for Claude Code and other compatible AI 
 
 ## Compatibility
 
-**Tested with:** jj v0.37.0
+**Tested with:** jj v0.44.0
 
-This skill is designed for jj v0.37.0 and may work with other versions, though compatibility is not guaranteed.
+This skill is designed for jj v0.44.0 and may work with other versions, though compatibility is not guaranteed.
 
 ## What is Jujutsu?
 
@@ -31,22 +31,22 @@ If you use [just](just.systems), you can run:
 just install
 ```
 
-Copy the `skill/` directory into your project's `.claude/skills/` directory:
+Copy the `jujutsu/` directory into your project's `.claude/skills/` directory:
 
 ```bash
-cp -r skill/ /path/to/your/project/.claude/skills/jj-vcs/
+cp -r jujutsu/ /path/to/your/project/.claude/skills/jujutsu/
 ```
 
 Or install it as a global skill:
 
 ```bash
-cp -r skill/ ~/.claude/skills/jj-vcs/
+cp -r jujutsu/ ~/.claude/skills/jujutsu/
 ```
 
 ## Skill Contents
 
 ```
-skill/
+jujutsu/
 └── SKILL.md    # Main skill file with jj workflow instructions
 ```
 
@@ -61,7 +61,7 @@ The skill emphasizes:
 
 ## Contributing
 
-Contributions are welcome. Please ensure any changes are compatible with jj v0.37.0.
+Contributions are welcome. Please ensure any changes are compatible with jj v0.44.0.
 
 ## License
 
