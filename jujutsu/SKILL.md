@@ -18,9 +18,10 @@ When running as an agent:
 
 ```bash
 # Always use --no-pager on commands that produce output
-jj --no-pager log          # NOT: jj log or bare jj
-jj --no-pager diff --git   # NOT: jj diff (always include --git)
-jj --no-pager show <id>    # NOT: jj show <id>
+jj --no-pager log                # NOT: jj log or bare jj
+jj --no-pager diff --git         # NOT: jj diff (always include --git)
+jj --no-pager interdiff --git    # NOT: jj interdiff (always include --git)
+jj --no-pager show <id>          # NOT: jj show <id>
 ```
 
 2. **Always use `-m` flags** to provide messages inline rather than relying on editor prompts:
@@ -35,9 +36,11 @@ Editor-based commands will fail in non-interactive environments.
 
 3. **Verify operations with `jj st`** after mutations (`squash`, `abandon`, `rebase`, `restore`) to confirm the operation succeeded.
 
-4. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
+4. **Never run `git checkout`/`git switch` to "fix" detached HEAD**: In colocated repos (`.jj/` + `.git/`), Git HEAD is intentionally detached to point at jj's `@` or `@-`. Linters or tools reporting "detached HEAD" are encountering normal jj operation. Do not attempt to checkout git branches.
 
-5. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
+5. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
+
+6. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
 
 ## Core Concepts
 
@@ -222,9 +225,29 @@ jj squash --into <change-id> -m "Updated commit message"
 
 **Note**: `jj squash -i` opens an interactive UI and will hang in agent environments. Avoid it.
 
-### Splitting Commits
+### Splitting Commits (Non-Interactive Recipe)
 
-**Warning**: `jj split` is interactive and will hang in agent environments. To divide a commit, use `jj restore` to move changes out, then create separate commits manually.
+`jj split` opens an interactive selection UI and will hang in agent environments. To split an existing commit `<target>` into separate atomic commits non-interactively:
+
+```bash
+# 1. Create first revision off target's parent
+jj new <target>- -m "First atomic change"
+
+# 2. Restore only the files for the first commit from target
+jj restore --from <target> path/to/file1.txt path/to/file2.txt
+
+# 3. Create second revision
+jj new -m "Second atomic change"
+
+# 4. Restore remaining files from target
+jj restore --from <target> path/to/file3.txt
+
+# 5. Rebase any original descendants of <target> onto the new split tip (@)
+jj rebase -s 'all:(<target>+)' -d @
+
+# 6. Safely abandon the original unsplit target commit
+jj abandon <target>
+```
 
 ### Absorbing Changes
 
@@ -501,6 +524,7 @@ jj edit <change-id>
 ```
 
 **Important notes:**
+- **Detached HEAD is normal**: Jujutsu keeps Git `HEAD` pointed at a detached commit representing `@` or `@-`. Linters or IDEs warning about detached HEAD are seeing normal jj operation. **DO NOT run `git checkout` or `git switch` to "fix" a detached HEAD.**
 - Git may complain about uncommitted changes if jj's working copy differs from the git HEAD
 - ALWAYS ensure your work is committed in jj before switching to git
 - After git operations, jj will detect and incorporate the changes on next command

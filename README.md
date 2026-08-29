@@ -21,8 +21,10 @@ This skill is designed for `jj v0.44.0` and may work with other versions, though
 
 ### 1. Automated Environment Safeguards
 - **Pager & Subcommand Isolation**: Mandates `--no-pager` and explicit subcommands to prevent hangs and bypass user-configured `ui.default-command`.
-- **Clean Unified Diffs**: Enforces `jj --no-pager diff --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
+- **Clean Unified Diffs**: Enforces `jj --no-pager diff --git` and `jj --no-pager interdiff --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
 - **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags for structured title and body paragraphs) to avoid editor prompts.
+- **Detached HEAD Guardrail**: Explicitly prevents agents from running `git checkout/switch` in response to benign detached HEAD warnings in colocated repos.
+- **Non-Interactive Commit Splitting**: Provides a deterministic, scriptable recipe to split commits without hanging on interactive `jj split`.
 - **Strict Immutability**: Prohibits `--ignore-immutable` and enforces branching off protected heads (`main`, trunk, remote tracking) via `jj new <base>`.
 
 ### 2. State & Commit Protection (`@` vs `@-` & `jj new`)
