@@ -197,15 +197,25 @@ Remove a commit entirely (descendants are rebased to its parent):
 jj abandon <change-id>
 ```
 
-### Undoing Operations
+### Undoing Operations and Multi-Step Recovery
 
-Reverse the last jj operation:
+Jujutsu records every repo mutation in an append-only operation log.
 
 ```bash
+# Reverse the single most recent operation
 jj undo
+
+# Redo the most recently undone operation
+jj redo
+
+# View recent operations (always pass --no-pager and optionally -n to limit output)
+jj --no-pager op log -n 10
+
+# Restore the entire repository state to a specific prior operation ID
+jj op restore <operation-id>
 ```
 
-This reverts the repository to its state before the previous command. Useful for recovering from mistakes like accidental `abandon`, `squash`, or `rebase`.
+This makes recovering from complex multi-step mistakes (like a sequence of bad rebases, squashes, or accidental abandons) safe and trivial.
 
 ### Rebasing Commits
 
@@ -422,6 +432,9 @@ jj st
 | Rebase | `jj rebase -d <destination>` |
 | Abandon commit | `jj abandon <id>` |
 | Undo last operation | `jj undo` |
+| Redo operation | `jj redo` |
+| View operation log | `jj --no-pager op log -n 10` |
+| Restore to operation | `jj op restore <operation-id>` |
 | Restore files | `jj restore [paths]` |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Fetch remote | `jj git fetch` |
