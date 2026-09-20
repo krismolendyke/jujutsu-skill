@@ -20,7 +20,7 @@ When running as an agent:
 # Always use --no-pager on commands that produce output
 jj --no-pager log                # NOT: jj log or bare jj
 jj --no-pager diff --git         # NOT: jj diff (always include --git)
-jj --no-pager interdiff --git    # NOT: jj interdiff (always include --git)
+jj --no-pager interdiff --from <old-revision> --to <new-revision> --git
 jj --no-pager show <id>          # NOT: jj show <id>
 ```
 
@@ -34,13 +34,15 @@ jj squash -m "message"    # NOT: jj squash (which opens editor)
 
 Editor-based commands will fail in non-interactive environments.
 
-3. **Verify operations with `jj st`** after mutations (`squash`, `abandon`, `rebase`, `restore`) to confirm the operation succeeded.
+3. **Verify operations after mutations** (`squash`, `abandon`, `rebase`, `restore`). Run `jj st`, inspect the affected graph, and check relevant content invariants; a successful exit alone does not prove that the intended changes were preserved.
 
 4. **Never run `git checkout`/`git switch` to "fix" detached HEAD**: In colocated repos (`.jj/` + `.git/`), Git HEAD is intentionally detached to point at jj's `@` or `@-`. Linters or tools reporting "detached HEAD" are encountering normal jj operation. Do not attempt to checkout git branches.
 
 5. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
 
 6. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
+
+7. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Examples such as `NAME=$(jj ...)` are scripting conveniences whose command line begins with a shell assignment and may therefore require separate permission. Prefer direct revsets in `jj` commands when possible, and never widen permissions merely to avoid a prompt.
 
 ## Core Concepts
 
@@ -166,6 +168,12 @@ jj desc \
 
 ### Viewing History
 
+Use `diff` to compare repository trees. Use `interdiff` to compare how the patch itself changed between two revisions, such as before and after revising or rebasing a change. Always provide both endpoints so the comparison is explicit:
+
+```bash
+jj --no-pager interdiff --from <old-revision> --to <new-revision> --git
+```
+
 ```bash
 # View recent commits
 jj --no-pager log
@@ -261,12 +269,25 @@ jj new -m "Second atomic change"
 # 4. Restore remaining files from target
 jj restore --from <target> path/to/file3.txt
 
-# 5. Rebase any original descendants of <target> onto the new split tip (@)
-jj rebase -s 'all:(<target>+)' -d @
+# 5. Rebase every original descendant of <target> onto the new split tip (@)
+jj rebase -s '<target>+' --onto @
 
-# 6. Safely abandon the original unsplit target commit
+# 6. Verify that the reconstructed tip has exactly the target's final tree
+# This command must produce no diff before continuing.
+jj --no-pager diff --from <target> --to @ --git
+
+# 7. Run the project's relevant tests against the reconstructed stack
+# <project-specific test command>
+
+# 8. Only after the tree diff is empty and tests pass, abandon the original
 jj abandon <target>
+
+# 9. Verify the rewritten stack from the split tip through its descendants
+jj --no-pager log -r '@::'
+jj st
 ```
+
+If the tree-equivalence diff is not empty or tests fail, stop: do not abandon `<target>`. The original change still preserves the complete content. Correct the reconstructed commits, or use `jj undo` to reverse the most recent operation, then repeat verification.
 
 ### Absorbing Changes
 
@@ -315,26 +336,34 @@ jj --no-pager op log -n 10
 jj op restore <operation-id>
 ```
 
-This makes recovering from complex multi-step mistakes (like a sequence of bad rebases, squashes, or accidental abandons) safe and trivial.
+Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation.
+
+For a targeted view of how one change evolved across rewrites, inspect its evolution log:
+
+```bash
+jj --no-pager evolog -p -r <change-id>
+```
+
+Use the displayed commit IDs to inspect an earlier version with `jj --no-pager show <commit-id>` or build a new change from one with `jj new <commit-id>`. Prefer this targeted approach when unrelated repository work must remain intact.
 
 ### Rebasing Commits
 
-Move commits to a different parent:
+Move commits to a different parent. Prefer `--onto` (or `-o`); `-d`/`--destination` remains a supported alias.
 
 ```bash
 # Rebase the entire current stack/branch onto main (common update workflow)
-jj rebase -d main
+jj rebase --onto main
 # Or explicitly by branch/stack:
-jj rebase -b @ -d main
+jj rebase -b @ --onto main
 
 # Rebase a specific revision and all its descendants onto a destination
-jj rebase -s <change-id> -d <destination>
+jj rebase -s <change-id> --onto <destination>
 
 # Rebase a whole stack using roots revset
-jj rebase -s 'roots(trunk()..@)' -d main
+jj rebase -s 'roots(trunk()..@)' --onto main
 
 # Rebase ONLY a single revision (rebasing its descendants onto its parents)
-jj rebase -r <change-id> -d <destination>
+jj rebase -r <change-id> --onto <destination>
 
 # Insert a commit before or after another revision
 jj rebase -r <change-id> -A <target-commit>   # insert after target
@@ -379,9 +408,12 @@ jj --no-pager file list -r <change-id>
 # Print file contents from a specific historical revision directly to stdout
 jj --no-pager file show -r <change-id> path/to/file.txt
 
-# Stop tracking a file without deleting it from the filesystem
+# Stop tracking a file without deleting it from the filesystem.
+# The path must already match an ignore rule.
 jj file untrack path/to/file.txt
 ```
+
+`jj file untrack` refuses to untrack a path that is not already ignored. First edit `.gitignore` for a shared rule or `.git/info/exclude` for a local rule, verify that the path matches, and only then run `jj file untrack`. `.jj/ignore` is useful for untracked local files, but it does not satisfy `file untrack`'s precondition.
 
 ### Ignoring Files (`.gitignore` vs `.jj/ignore`)
 
@@ -396,6 +428,8 @@ Bookmarks are jj's equivalent to git branches.
 
 **Agent Tip (Idempotent Bookmark Setting)**: Use `jj bookmark set <name> -r <revset>` (defaults to `-r @`). If the bookmark exists, it moves it; if not, it creates it. This avoids errors from calling `create` on existing bookmarks or `move` on new ones.
 
+For safety, `bookmark set` and `bookmark move` refuse to move a bookmark backward or sideways by default. If that movement is intentional, inspect the graph first, then use `--allow-backwards`. Do not add this flag automatically after an error: moving a shared bookmark backward can require a force-push and overwrite collaborators' published history.
+
 ```bash
 # Create or move bookmark to current commit (idempotent - recommended for agents)
 jj bookmark set my-feature -r @
@@ -403,8 +437,12 @@ jj bookmark set my-feature -r @
 # Explicitly create a new bookmark
 jj bookmark create my-feature -r @
 
-# Move an existing bookmark to a different commit
+# Move an existing bookmark forward to a different commit
 jj bookmark move my-feature --to <change-id>
+
+# Deliberately move backward/sideways only after inspecting the graph
+jj --no-pager log -r 'my-feature | <change-id>'
+jj bookmark set my-feature -r <change-id> --allow-backwards
 
 # Advance the closest bookmark forward along the stack (to @ or specific target)
 jj bookmark advance
@@ -493,7 +531,7 @@ When coordinating a team of parallel subagents, use `jj workspace` to give each 
 ```bash
 # Bring main up to date
 jj git fetch
-jj rebase -d main@origin
+jj rebase --onto main@origin
 
 # CRITICAL: PIN the exact base commit hash (never use floating 'main')
 BASE=$(jj log -r main -T 'commit_id' --no-graph)
@@ -523,20 +561,21 @@ jj --no-pager diff --stat -r <agent-db-commit>
 jj --no-pager diff --stat -r <agent-ui-commit>
 
 # 2. Rebase cleanly onto main
-jj rebase -s <agent-db-commit> -d main
-jj rebase -s <agent-ui-commit> -d main
+jj rebase -s <agent-db-commit> --onto main
+jj rebase -s <agent-ui-commit> --onto main
 
 # 3. Update bookmark and push
 jj bookmark set main -r @-
 jj git push --dry-run -b main
 jj git push -b main
 
-# 4. Clean up workspace pointers and disk directories
+# 4. Remove workspace pointers one at a time
 jj workspace forget agent-db
 jj workspace forget agent-ui
 jj workspace forget agent-api
-rm -rf ../agent-db ../agent-ui ../agent-api
 ```
+
+`jj workspace forget` does not delete the directories from disk. Directory deletion is a separate filesystem action outside this skill's `Bash(jj *)` permission boundary. Before requesting or performing it, resolve and inspect each path individually, confirm it is the expected forgotten workspace, and obtain authorization for the destructive action. Never use an unverified variable, glob, or multi-path recursive deletion command.
 
 ## Git Integration
 
@@ -563,34 +602,13 @@ jj git fetch --remote <remote-name>
 jj git fetch -b <branch-name>
 ```
 
-After fetching, rebase your work onto the updated trunk: `jj rebase -d main`
+After fetching, rebase your work onto the updated trunk: `jj rebase --onto main`
 
-### Switching Between jj and git (Colocated Repos Only)
+### Colocated Repository Safety
 
-**This section only applies to colocated repos** (where both `.jj/` and `.git/` exist). In non-colocated repos, do not use git commands — they will corrupt jj state.
+A colocated repository contains both `.jj/` and `.git/`, but agents should still perform version-control operations through `jj` only. Jujutsu keeps Git `HEAD` detached at a commit representing the jj working-copy state, so detached-HEAD warnings from Git-oriented tools are normal and do not need repair.
 
-In a colocated repository, you can use both jj and git commands with care:
-
-**Switching to git mode** (e.g., for merge workflows):
-```bash
-# First, ensure your jj working copy is clean
-jj st
-
-# Then checkout a branch with git
-git checkout <branch-name>
-```
-
-**Switching back to jj mode**:
-```bash
-# Use jj edit to resume working with jj
-jj edit <change-id>
-```
-
-**Important notes:**
-- **Detached HEAD is normal**: Jujutsu keeps Git `HEAD` pointed at a detached commit representing `@` or `@-`. Linters or IDEs warning about detached HEAD are seeing normal jj operation. **DO NOT run `git checkout` or `git switch` to "fix" a detached HEAD.**
-- Git may complain about uncommitted changes if jj's working copy differs from the git HEAD
-- ALWAYS ensure your work is committed in jj before switching to git
-- After git operations, jj will detect and incorporate the changes on next command
+**Do not run `git checkout` or `git switch` to fix detached HEAD.** Those commands move Git's working tree outside jj's workflow and can create confusing imports or overwrite working-copy state. If a task genuinely requires direct Git operation, stop and request explicit user authorization; it is outside this skill's `Bash(jj *)` permission boundary.
 
 ### Pushing Changes
 
@@ -630,14 +648,26 @@ jj git push -c <change-id>
 
 ## Handling Conflicts
 
-jj allows committing conflicts — you can resolve them later:
+jj allows commits to contain unresolved conflicts. Inspect both the working copy and the affected stack:
 
 ```bash
-# View conflicts
 jj st
+jj --no-pager log -r 'conflicts()'
 ```
 
-**Agent conflict resolution**: Do not use `jj resolve` (interactive). Instead, edit the conflicted files directly to remove conflict markers, then run `jj st` to verify resolution.
+**Agent conflict resolution**: Do not use `jj resolve` because it launches an interactive merge tool. Edit conflicted files directly, but do not assume Git's simple `<<<<<<<` / `=======` / `>>>>>>>` three-way format. Jujutsu can materialize snapshot sections marked with `+++++++` and one or more diff sections marked with `%%%%%%%` inside the outer `<<<<<<< Conflict ...` and `>>>>>>> Conflict ... ends` markers. A conflict can have more than two sides, so understand every section before choosing the final content and removing the complete marker block.
+
+After editing, verify both scopes again:
+
+```bash
+# Confirms whether the working-copy commit still has unresolved files
+jj st
+
+# Must return no affected revisions for resolution to be complete across the stack
+jj --no-pager log -r 'conflicts()'
+```
+
+`jj st` alone only describes `@`; a rebase can leave a conflict in another revision. Do not report conflict resolution complete while the relevant revision still appears in `conflicts()`.
 
 ## Handling Divergent Commits
 
@@ -736,7 +766,8 @@ jj git push -b feature-b
 | Edit commit | `jj edit <id>` |
 | Squash to parent | `jj squash` |
 | Auto-distribute | `jj absorb` |
-| Rebase | `jj rebase -d <destination>` |
+| Rebase | `jj rebase --onto <destination>` |
+| Compare patch revisions | `jj --no-pager interdiff --from <old> --to <new> --git` |
 | Parallelize revisions | `jj parallelize <revisions>` |
 | Duplicate revision | `jj duplicate <id>` |
 | Abandon commit | `jj abandon <id>` |
@@ -744,11 +775,13 @@ jj git push -b feature-b
 | Redo operation | `jj redo` |
 | View operation log | `jj --no-pager op log -n 10` |
 | Restore to operation | `jj op restore <operation-id>` |
+| Inspect change evolution | `jj --no-pager evolog -p -r <change-id>` |
 | Restore files | `jj restore [paths]` |
 | List files at rev | `jj --no-pager file list -r <id>` |
 | Show file content | `jj --no-pager file show -r <id> <path>` |
-| Untrack file | `jj file untrack <path>` |
+| Untrack ignored file | `jj file untrack <path>` (path must already be ignored) |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
+| Move bookmark backward/sideways | Inspect graph, then `jj bookmark set <name> -r <target> --allow-backwards` |
 | Advance bookmark | `jj bookmark advance [--to <target>]` |
 | Track remote bookmark | `jj bookmark track <name>@<remote>` |
 | Untrack remote bookmark | `jj bookmark untrack <name>@<remote>` |
