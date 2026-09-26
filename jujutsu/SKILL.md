@@ -108,6 +108,9 @@ COMMIT_ID=$(jj log -r @ -T 'commit_id' --no-graph)
 # Check if working copy has changes (outputs "true" or "false")
 IS_EMPTY=$(jj log -r @ -T 'empty' --no-graph)
 
+# Check if commit has unresolved conflicts (outputs "true" or "false")
+HAS_CONFLICTS=$(jj log -r @ -T 'conflict' --no-graph)
+
 # Check if commit is protected / immutable (outputs "true" or "false")
 IS_IMMUTABLE=$(jj log -r @ -T 'immutable' --no-graph)
 
@@ -627,6 +630,10 @@ After fetching, rebase your work onto the updated trunk: `jj rebase --onto main`
 A colocated repository contains both `.jj/` and `.git/`, but agents should still perform version-control operations through `jj` only. Jujutsu keeps Git `HEAD` detached at a commit representing the jj working-copy state, so detached-HEAD warnings from Git-oriented tools are normal and do not need repair.
 
 **Do not run `git checkout` or `git switch` to fix detached HEAD.** Those commands move Git's working tree outside jj's workflow and can create confusing imports or overwrite working-copy state. If a task genuinely requires direct Git operation, stop and request explicit user authorization; it is outside this skill's `Bash(jj *)` permission boundary.
+
+### Git Pre-Commit Hooks Notice
+
+Jujutsu records changes continuously and automatically; it does NOT execute Git `pre-commit` hooks (such as Husky, lefthook, or lint-staged). In projects that rely on Git hooks for formatting or linting, agents must explicitly run the project's formatting and test commands before advancing with `jj new`.
 
 ### Pushing Changes
 

@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Claude agent local files
+.claude/settings.local.json
+.claude/worktrees/
+
+# Temporary / scratch files
+*.tmp
+*.log

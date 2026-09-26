@@ -110,12 +110,14 @@ jj --no-pager status
 - **Operation Log Rollback**: Instant repository restoration to any prior state using `jj --no-pager op log` and `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
 
 ### 7. Historical Inspection & Scripting Recipes
-- **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, and `immutable` without graph pollution or regex parsing:
+- **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, and `immutable` without graph pollution or regex parsing:
   ```bash
   CHANGE_ID=$(jj log -r @ -T 'change_id' --no-graph)
   COMMIT_ID=$(jj log -r @ -T 'commit_id' --no-graph)
   IS_EMPTY=$(jj log -r @ -T 'empty' --no-graph)
+  HAS_CONFLICTS=$(jj log -r @ -T 'conflict' --no-graph)
   ```
+- **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
 - **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager file show`), and manage untracked agent artifacts via `.jj/ignore`.
 - **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), unpushed changes (`remote_bookmarks()..`), and empty mutable commit cleanup:
   ```bash
