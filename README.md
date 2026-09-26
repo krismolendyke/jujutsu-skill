@@ -72,7 +72,7 @@ jj --no-pager status
 
 ### 3. Multi-Agent Workspace Orchestration Playbook
 - **Isolated Workspaces**: Complete playbook for spawning $N$ parallel subagents in separate `jj workspace` instances.
-- **Base Pinning**: Pins exact base commit hashes (`BASE=$(jj log -r main -T 'commit_id' --no-graph)`) to ensure parallel sibling branches.
+- **Base Pinning**: Pins exact base commit hashes (`BASE=$(jj --no-pager log -r main -T 'commit_id' --no-graph)`) to ensure parallel sibling branches.
 - **Sparse Checkouts (`jj sparse`)**: Restrict workspaces to relevant subdirectories to reduce disk footprint and index times:
   ```bash
   jj sparse set --clear --add src/ --add packages/backend/
@@ -112,10 +112,10 @@ jj --no-pager status
 ### 7. Historical Inspection & Scripting Recipes
 - **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, and `immutable` without graph pollution or regex parsing:
   ```bash
-  CHANGE_ID=$(jj log -r @ -T 'change_id' --no-graph)
-  COMMIT_ID=$(jj log -r @ -T 'commit_id' --no-graph)
-  IS_EMPTY=$(jj log -r @ -T 'empty' --no-graph)
-  HAS_CONFLICTS=$(jj log -r @ -T 'conflict' --no-graph)
+  CHANGE_ID=$(jj --no-pager log -r @ -T 'change_id' --no-graph)
+  COMMIT_ID=$(jj --no-pager log -r @ -T 'commit_id' --no-graph)
+  IS_EMPTY=$(jj --no-pager log -r @ -T 'empty' --no-graph)
+  HAS_CONFLICTS=$(jj --no-pager log -r @ -T 'conflict' --no-graph)
   ```
 - **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
 - **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager file show`), and manage untracked agent artifacts via `.jj/ignore`.
@@ -144,8 +144,9 @@ just install-local
 just install-local-claude
 just install-local-antigravity
 
-# Clean up / uninstall global skill directories
+# Clean up / uninstall skill directories
 just uninstall
+just uninstall-local
 ```
 
 ### Manual Installation

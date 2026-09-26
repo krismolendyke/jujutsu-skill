@@ -22,3 +22,6 @@ install-local-antigravity:
 
 uninstall:
     rm -rf ~/.claude/skills/jujutsu ~/.gemini/config/skills/jujutsu
+
+uninstall-local:
+    rm -rf .claude/skills/jujutsu .agents/skills/jujutsu

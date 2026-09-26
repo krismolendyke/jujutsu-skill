@@ -23,6 +23,7 @@ jj --no-pager log                # NOT: jj log or bare jj
 jj --no-pager diff --git         # NOT: jj diff (always include --git)
 jj --no-pager interdiff --from <old-revision> --to <new-revision> --git
 jj --no-pager show --git <id>    # NOT: jj show <id> (always include --git)
+jj --no-pager <cmd> --help       # NOT: jj <cmd> --help (can open pager)
 ```
 
 2. **Always use `-m` flags** to provide messages inline rather than relying on editor prompts:
@@ -102,20 +103,20 @@ Agents and scripts can extract specific commit metadata programmatically without
 
 ```bash
 # Query stable Change ID or Commit Hash of @
-CHANGE_ID=$(jj log -r @ -T 'change_id' --no-graph)
-COMMIT_ID=$(jj log -r @ -T 'commit_id' --no-graph)
+CHANGE_ID=$(jj --no-pager log -r @ -T 'change_id' --no-graph)
+COMMIT_ID=$(jj --no-pager log -r @ -T 'commit_id' --no-graph)
 
 # Check if working copy has changes (outputs "true" or "false")
-IS_EMPTY=$(jj log -r @ -T 'empty' --no-graph)
+IS_EMPTY=$(jj --no-pager log -r @ -T 'empty' --no-graph)
 
 # Check if commit has unresolved conflicts (outputs "true" or "false")
-HAS_CONFLICTS=$(jj log -r @ -T 'conflict' --no-graph)
+HAS_CONFLICTS=$(jj --no-pager log -r @ -T 'conflict' --no-graph)
 
 # Check if commit is protected / immutable (outputs "true" or "false")
-IS_IMMUTABLE=$(jj log -r @ -T 'immutable' --no-graph)
+IS_IMMUTABLE=$(jj --no-pager log -r @ -T 'immutable' --no-graph)
 
 # Query commit description title (first line)
-TITLE=$(jj log -r @ -T 'description.first_line()' --no-graph)
+TITLE=$(jj --no-pager log -r @ -T 'description.first_line()' --no-graph)
 ```
 
 ## Essential Workflow
@@ -464,7 +465,7 @@ jj bookmark set my-feature -r <change-id> --allow-backwards
 
 # Advance the closest bookmark forward along the stack (to @ or specific target)
 jj bookmark advance
-jj bookmark advance --to @-
+jj bookmark advance -r @-
 
 # List bookmarks
 jj --no-pager bookmark list
@@ -555,7 +556,7 @@ jj git fetch
 jj rebase --onto main@origin
 
 # CRITICAL: PIN the exact base commit hash (never use floating 'main')
-BASE=$(jj log -r main -T 'commit_id' --no-graph)
+BASE=$(jj --no-pager log -r main -T 'commit_id' --no-graph)
 
 # Create isolated workspaces for each agent rooted at $BASE
 jj workspace add ../agent-db --revision "$BASE"
@@ -786,7 +787,7 @@ jj git push -b feature-b
 | Describe commit | `jj desc -m "message"` |
 | View status | `jj --no-pager status` (or `jj --no-pager st`) |
 | View log | `jj --no-pager log` |
-| View diff | `jj --no-pager diff --git` |
+| View diff | `jj --no-pager diff --git [paths]` |
 | View commit diff | `jj --no-pager show --git <id>` |
 | View unpushed commits | `jj --no-pager log -r 'remote_bookmarks()..'` |
 | New commit | `jj new -m "message"` (check `jj --no-pager status` first; skip if `@` is empty) |
@@ -812,7 +813,7 @@ jj git push -b feature-b
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Rename bookmark | `jj bookmark rename <old> <new>` |
 | Move bookmark backward/sideways | Inspect graph, then `jj bookmark set <name> -r <target> --allow-backwards` |
-| Advance bookmark | `jj bookmark advance [--to <target>]` |
+| Advance bookmark | `jj bookmark advance [-r <target>]` |
 | Track remote bookmark | `jj bookmark track <name>@<remote>` |
 | Untrack remote bookmark | `jj bookmark untrack <name>@<remote>` |
 | Fetch remote | `jj git fetch` |
