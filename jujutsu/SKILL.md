@@ -520,11 +520,11 @@ Useful for running a long build or test in one workspace while editing in anothe
 
 ```bash
 # Create a new workspace (defaults: name = basename of path, parent = current @'s parent).
-# As of jj 0.46.0, pass colocation explicitly. When the current workspace is
-# colocated and git.colocate is true, the default creates a Git worktree.
+# Pass --colocate so the workspace is a Git worktree. Tools that require a
+# Git repo keep working. Do not pass --no-colocate.
 # --sparse-patterns defaults to copy (inherit the parent's sparse patterns).
-jj workspace add --no-colocate --sparse-patterns full ../my-tests
-jj workspace add --no-colocate --sparse-patterns full --name tests -r <change-id> ../my-tests
+jj workspace add --colocate --sparse-patterns full ../my-tests
+jj workspace add --colocate --sparse-patterns full --name tests -r <change-id> ../my-tests
 
 # Inspect. list/root show every recorded path, including unreachable ones.
 # root prints a warning for an unreachable path; that warning does not mean
@@ -595,11 +595,12 @@ jj rebase --onto main@origin
 # Do not use a shell assignment, and do not pass the floating bookmark name.
 jj --no-pager --color=never log -r main -T 'commit_id' --no-graph
 
-# Isolated workspaces. --no-colocate avoids a Git worktree when git.colocate
-# is true. --sparse-patterns full avoids inheriting a sparse parent.
-jj workspace add --no-colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-db
-jj workspace add --no-colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-ui
-jj workspace add --no-colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-api
+# Isolated workspaces. --colocate gives each one a Git worktree so tools that
+# require a Git repo keep working. Do not pass --no-colocate.
+# --sparse-patterns full avoids inheriting a sparse parent.
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-db
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-ui
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-api
 
 # Verify
 jj --no-pager --color=never workspace list
@@ -871,7 +872,7 @@ jj git push -b feature-b
 | Fetch remote | `jj git fetch` |
 | Push bookmark | `jj git push -b <name>` |
 | Push change ID | `jj git push -c <id>` |
-| Add workspace | `jj workspace add <path>` |
+| Add workspace | `jj workspace add --colocate <path>` (do not pass `--no-colocate`) |
 | List workspaces | `jj --no-pager --color=never workspace list` |
 | Forget workspace | `jj workspace forget [name]` (unregisters; does not delete the directory) |
 | Remove workspace directory | `jj workspace remove <name>` (snapshots, then deletes; needs authorization; not the main workspace) |
