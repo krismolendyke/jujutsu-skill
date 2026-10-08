@@ -13,14 +13,14 @@ Working with Jujutsu in automated or agentic coding environments requires specif
 
 ## Compatibility
 
-**Tested with:** `jj v0.45.1` (compatible with `jj v0.44.0` - `v0.45.1`)
+**Tested with:** `jj v0.46.0`
 
-This skill is designed for `jj v0.45.1` (and `v0.44.0+`) and may work with other versions, though compatibility is not guaranteed.
+This skill is designed for `jj v0.46.0`. Workspace colocation flags, `jj workspace remove`, `jj file delete`, and cross-workspace `jj undo`/`jj redo` require that version.
 
 ## Key Skill Features & Agent Guardrails
 
 ### 1. Automated Environment Safeguards
-- **Pager & Subcommand Isolation**: Mandates `--no-pager` and explicit subcommands (`jj --no-pager status`, `jj --no-pager log`) to prevent hangs and bypass user-configured `ui.default-command`.
+- **Pager & Subcommand Isolation**: Mandates `--no-pager`, `--color=never`, and explicit subcommands (`jj --no-pager --color=never status`, `jj --no-pager --color=never log`) to prevent hangs, bypass user-configured `ui.default-command`, and override `ui.color = "always"`.
 - **Clean Unified Diffs**: Enforces `jj --no-pager diff --git`, `jj --no-pager interdiff --git`, and `jj --no-pager show --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
 - **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags for structured title and body paragraphs) to avoid editor prompts.
 - **No Interactive Flags**: Strictly avoids `-i` / `--interactive` across all subcommands (`squash`, `split`, `diff`, `diffedit`, `restore`, `absorb`).
@@ -28,7 +28,7 @@ This skill is designed for `jj v0.45.1` (and `v0.44.0+`) and may work with other
 - **Strict Immutability**: Prohibits `--ignore-immutable` and enforces branching off protected heads (`main`, trunk, remote tracking) via `jj new <base>`.
 
 #### Non-Interactive Commit Splitting Recipe
-`jj split` opens an interactive UI that hangs automated agents. The skill provides a deterministic, verified non-interactive alternative:
+Whole files can be split without an editor: `jj split -r <target> -m "Selected change message" path/to/file`. Omitting the fileset opens a diff editor, and as of jj 0.46.0 omitting `-m` opens a description editor. Splits inside a single file still use this deterministic alternative:
 
 ```bash
 # 1. Create first revision off target's parent
@@ -72,7 +72,7 @@ jj --no-pager status
 
 ### 3. Multi-Agent Workspace Orchestration Playbook
 - **Isolated Workspaces**: Complete playbook for spawning $N$ parallel subagents in separate `jj workspace` instances.
-- **Base Pinning**: Pins exact base commit hashes (`BASE=$(jj --no-pager log -r main -T 'commit_id' --no-graph)`) to ensure parallel sibling branches.
+- **Base Pinning**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Do not wrap `jj` in a shell assignment, and do not move or push `main` when merging agent work back.
 - **Sparse Checkouts (`jj sparse`)**: Restrict workspaces to relevant subdirectories to reduce disk footprint and index times:
   ```bash
   jj sparse set --clear --add src/ --add packages/backend/
@@ -112,10 +112,10 @@ jj --no-pager status
 ### 7. Historical Inspection & Scripting Recipes
 - **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, and `immutable` without graph pollution or regex parsing:
   ```bash
-  CHANGE_ID=$(jj --no-pager log -r @ -T 'change_id' --no-graph)
-  COMMIT_ID=$(jj --no-pager log -r @ -T 'commit_id' --no-graph)
-  IS_EMPTY=$(jj --no-pager log -r @ -T 'empty' --no-graph)
-  HAS_CONFLICTS=$(jj --no-pager log -r @ -T 'conflict' --no-graph)
+  jj --no-pager --color=never log -r @ -T 'change_id' --no-graph
+  jj --no-pager --color=never log -r @ -T 'commit_id' --no-graph
+  jj --no-pager --color=never log -r @ -T 'empty' --no-graph
+  jj --no-pager --color=never log -r @ -T 'conflict' --no-graph
   ```
 - **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
 - **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager file show`), and manage untracked agent artifacts via `.jj/ignore`.
@@ -194,7 +194,7 @@ jujutsu/
 
 ## Contributing
 
-Contributions are welcome. Please ensure any changes are compatible with `jj v0.45.1` and follow agent-safe non-interactive practices.
+Contributions are welcome. Please ensure any changes are compatible with `jj v0.46.0` and follow agent-safe non-interactive practices.
 
 ## License
 
