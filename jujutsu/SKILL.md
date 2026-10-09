@@ -138,7 +138,7 @@ jj new main -m "Add user authentication to login endpoint"
 jj new <change-id> -m "Add validation to user input forms"
 ```
 
-2. **Continuing on current branch**: If working on top of the current revision, validate that `@` is empty with `jj st`. If it is not empty, run `jj new` first:
+2. **Continuing on current branch**: If working on top of the current revision, validate that `@` is empty with `jj --no-pager --color=never st`. If it is not empty, run `jj new` first:
 
 ```bash
 # Ensure you are on a blank commit
@@ -376,7 +376,7 @@ For a targeted view of how one change evolved across rewrites, inspect its evolu
 jj --no-pager --color=never evolog -p -r <change-id>
 ```
 
-Use the displayed commit IDs to inspect an earlier version with `jj --no-pager --color=never show <commit-id>` or build a new change from one with `jj new <commit-id>`. Prefer this targeted approach when unrelated repository work must remain intact.
+Use the displayed commit IDs to inspect an earlier version with `jj --no-pager --color=never show --git <commit-id>` or build a new change from one with `jj new <commit-id>`. Prefer this targeted approach when unrelated repository work must remain intact.
 
 ### Rebasing Commits
 
@@ -530,7 +530,7 @@ jj workspace add --colocate --sparse-patterns full --name tests -r <change-id> .
 # root prints a warning for an unreachable path; that warning does not mean
 # the workspace is missing from the list.
 jj --no-pager --color=never workspace list
-jj workspace root [--name <ws>]
+jj --no-pager --color=never workspace root [--name <ws>]
 
 # Unregister a workspace. Does not delete the working-copy directory.
 # If the workspace had a Git worktree, that worktree registration is removed.
@@ -769,7 +769,7 @@ jj abandon <obsolete-commit-id>
 
 2. **Combine both versions**: Squash changes from one version into the other using specific Commit IDs:
 ```bash
-jj squash --from <source-commit-id> --into <target-commit-id>
+jj squash --from <source-commit-id> --into <target-commit-id> -u
 ```
 
 ## Megamerges (Multi-Branch Integration & Testing)
@@ -829,7 +829,7 @@ jj git push -b feature-b
 2. **Is it atomic?** One logical change per commit
 3. **Is the message clear?** Use imperative verb phrase in sentence case format with no full stop: e.g. "Add login endpoint", "Fix null pointer in payment processor", "Remove deprecated API endpoints"
 4. **Are there unrelated changes?** Use `jj restore` to move changes out, then create separate commits
-5. **Should changes be elsewhere?** Use `jj squash` or `jj absorb`
+5. **Should changes be elsewhere?** Use `jj squash -u` or `jj absorb`
 6. **Protect the completed commit**: Always run `jj new` when done so `@` is on a fresh empty revision rather than sitting directly on your finished commit
 
 ## Quick Reference
@@ -844,7 +844,7 @@ jj git push -b feature-b
 | View unpushed commits | `jj --no-pager --color=never log -r 'remote_bookmarks()..'` |
 | New commit | If `@` is empty, `jj desc -m "message"`. If it is not, `jj new` first, then `jj desc -m`. `jj new -m` leaves the message on `@` and does not park an empty child |
 | Edit commit | `jj edit <id>` |
-| Squash to parent | `jj squash` |
+| Squash to parent | `jj squash -u` |
 | Auto-distribute changes | `jj absorb` (or `jj absorb <paths>`) |
 | Verify absorb / changes | `jj --no-pager --color=never op show -p` |
 | Rebase | `jj rebase --onto <destination>` |

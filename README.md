@@ -21,7 +21,7 @@ This skill is designed for `jj v0.46.0`. Workspace colocation flags, `jj workspa
 
 ### 1. Automated Environment Safeguards
 - **Pager & Subcommand Isolation**: Mandates `--no-pager`, `--color=never`, and explicit subcommands (`jj --no-pager --color=never status`, `jj --no-pager --color=never log`) to prevent hangs, bypass user-configured `ui.default-command`, and override `ui.color = "always"`.
-- **Clean Unified Diffs**: Enforces `jj --no-pager diff --git`, `jj --no-pager interdiff --git`, and `jj --no-pager show --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
+- **Clean Unified Diffs**: Enforces `jj --no-pager --color=never diff --git`, `jj --no-pager --color=never interdiff --git`, and `jj --no-pager --color=never show --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
 - **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags for structured title and body paragraphs) to avoid editor prompts.
 - **No Interactive Flags**: Strictly avoids `-i` / `--interactive` across all subcommands (`squash`, `split`, `diff`, `diffedit`, `restore`, `absorb`).
 - **Detached HEAD Guardrail**: Explicitly prevents agents from running `git checkout/switch` in response to benign detached HEAD warnings in colocated repos.
@@ -47,7 +47,7 @@ jj restore --from <target> path/to/file3.txt
 jj rebase -s '<target>+' --onto @
 
 # 6. Verify that the reconstructed tip has exactly the target's final tree
-jj --no-pager diff --from <target> --to @ --git
+jj --no-pager --color=never diff --from <target> --to @ --git
 
 # 7. Run relevant test suite against reconstructed stack
 # <project-specific test command>
@@ -56,8 +56,8 @@ jj --no-pager diff --from <target> --to @ --git
 jj abandon <target>
 
 # 9. Verify rewritten stack and working copy
-jj --no-pager log -r '@::'
-jj --no-pager status
+jj --no-pager --color=never log -r '@::'
+jj --no-pager --color=never status
 ```
 
 ### 2. State & Commit Protection (`@` vs `@-` & `jj new`)
@@ -98,7 +98,7 @@ jj --no-pager status
 ### 5. Advanced Tree Manipulation & Megamerges
 - **Targeted Squashing**: Move changes directly into/from specific revisions without full rebases (`jj squash --into <id>`, `jj squash --from <id>`, `-u`).
 - **Parallelizing Commits**: Convert sequential, orthogonal commits into parallel sibling branches off a common parent with `jj parallelize`.
-- **Targeted Absorption**: Absorb changes into ancestor commits automatically (`jj absorb`) or restrict absorption to specific paths (`jj absorb path/to/file`), then verify with `jj --no-pager op show -p`.
+- **Targeted Absorption**: Absorb changes into ancestor commits automatically (`jj absorb`) or restrict absorption to specific paths (`jj absorb path/to/file`), then verify with `jj --no-pager --color=never op show -p`.
 - **Duplicating Revisions (`jj duplicate`)**: Create independent sibling copies of changes with fresh Change IDs for experimental spikes and refactoring spikes:
   ```bash
   jj duplicate <change-id>
@@ -107,7 +107,7 @@ jj --no-pager status
 - **Megamerges for Testing**: Create local octopus merges (`jj new feat-a feat-b feat-c`) to compile, test, and verify multiple in-flight features together without pushing the merge commit.
 
 ### 6. Multi-Step Disaster Recovery
-- **Operation Log Rollback**: Instant repository restoration to any prior state using `jj --no-pager op log` and `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
+- **Operation Log Rollback**: Instant repository restoration to any prior state using `jj --no-pager --color=never op log` and `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
 
 ### 7. Historical Inspection & Scripting Recipes
 - **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, and `immutable` without graph pollution or regex parsing:
@@ -118,7 +118,7 @@ jj --no-pager status
   jj --no-pager --color=never log -r @ -T 'conflict' --no-graph
   ```
 - **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
-- **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager file show`), and manage untracked agent artifacts via `.jj/ignore`.
+- **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager --color=never file show`), and manage untracked agent artifacts via `.jj/ignore`.
 - **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), unpushed changes (`remote_bookmarks()..`), and empty mutable commit cleanup:
   ```bash
   # Abandon empty mutable commits (excluding root and @)
