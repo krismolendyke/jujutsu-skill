@@ -107,15 +107,21 @@ jj --no-pager --color=never status
 - **Megamerges for Testing**: Create local octopus merges (`jj new feat-a feat-b feat-c`) to compile, test, and verify multiple in-flight features together without pushing the merge commit.
 
 ### 6. Multi-Step Disaster Recovery
-- **Operation Log Rollback**: Instant repository restoration to any prior state using `jj --no-pager --color=never op log` and `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
+- **Operation Log Rollback & Non-Destructive Preview**: Preview prior repository state via `jj --no-pager --color=never status --at-op=<operation-id>` or `log --at-op=<operation-id>`, and restore state with `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
 
 ### 7. Historical Inspection & Scripting Recipes
-- **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, and `immutable` without graph pollution or regex parsing:
+- **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, `immutable`, and one-line summaries without graph pollution or regex parsing:
   ```bash
   jj --no-pager --color=never log -r @ -T 'change_id' --no-graph
   jj --no-pager --color=never log -r @ -T 'commit_id' --no-graph
   jj --no-pager --color=never log -r @ -T 'empty' --no-graph
   jj --no-pager --color=never log -r @ -T 'conflict' --no-graph
+  jj --no-pager --color=never log -r 'trunk()..@' --no-graph -T 'change_id.shortest(8) ++ " " ++ description.first_line() ++ "\n"'
+  ```
+- **Configuration Inspection**: Query active settings without opening editors:
+  ```bash
+  jj --no-pager --color=never config list
+  jj --no-pager --color=never config get user.name
   ```
 - **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
 - **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager --color=never file show`), and manage untracked agent artifacts via `.jj/ignore`.
@@ -147,6 +153,11 @@ just install-local-antigravity
 # Clean up / uninstall skill directories
 just uninstall
 just uninstall-local
+
+# Verify doc patterns and sync status
+just check
+just check-patterns
+just check-sync
 ```
 
 ### Manual Installation

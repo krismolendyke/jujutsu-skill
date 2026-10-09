@@ -120,6 +120,9 @@ jj --no-pager --color=never log -r @ -T 'immutable' --no-graph
 
 # Query commit description title (first line)
 jj --no-pager --color=never log -r @ -T 'description.first_line()' --no-graph
+
+# Compact one-line summary of stack commits (change ID + description)
+jj --no-pager --color=never log -r 'trunk()..@' --no-graph -T 'change_id.shortest(8) ++ " " ++ description.first_line() ++ "\n"'
 ```
 
 ## Essential Workflow
@@ -362,11 +365,15 @@ jj redo
 # View recent operations (always pass --no-pager and optionally -n to limit output)
 jj --no-pager --color=never op log -n 10
 
+# Preview repository status or log at an earlier operation WITHOUT restoring
+jj --no-pager --color=never status --at-op=<operation-id>
+jj --no-pager --color=never log --at-op=<operation-id> -n 5
+
 # Restore the entire repository state to a specific prior operation ID
 jj op restore <operation-id>
 ```
 
-Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation.
+Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation. Preview with `--at-op` first to confirm what will be restored.
 
 As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace. If that happens, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
 
@@ -461,6 +468,26 @@ Jujutsu respects standard `.gitignore` files in the repository. In addition, you
 
 - **`.gitignore`**: Tracked in git, shared across all repository clones and team members. As of jj 0.46.0 these rules still apply when the ignore file is outside the workspace's sparse patterns, so a sparse working copy does not start tracking ignored files. In-tree `.gitignore` symlinks are skipped.
 - **`.jj/ignore`**: Untracked, private to your local clone. Use `.jj/ignore` for agent scratchpads, temporary debug dumps, or local tools that should never be committed to git.
+
+### Inspecting Configuration (`jj config`)
+
+Query Jujutsu configuration non-interactively without opening config editors:
+
+```bash
+# List all active configuration settings (from user and repo configs)
+jj --no-pager --color=never config list
+
+# Query a specific configuration value
+jj --no-pager --color=never config get user.name
+jj --no-pager --color=never config get user.email
+
+# Query with fallback if setting is not defined
+jj --no-pager --color=never config get revsets.bookmark-advance-to || true
+```
+
+Config files reside in:
+- User-level: `~/.config/jj/config.toml`
+- Repository-level: `<repo>/.jj/repo/config.toml`
 
 ## Working with Bookmarks (Branches)
 
@@ -856,6 +883,7 @@ jj git push -b feature-b
 | Undo last operation | `jj undo` |
 | Redo operation | `jj redo` |
 | View operation log | `jj --no-pager --color=never op log -n 10` |
+| Preview prior operation | `jj --no-pager --color=never status --at-op=<id>` |
 | Restore to operation | `jj op restore <operation-id>` |
 | Inspect change evolution | `jj --no-pager --color=never evolog -p -r <change-id>` |
 | Restore files | `jj restore [paths]` |
@@ -863,6 +891,8 @@ jj git push -b feature-b
 | Show file content | `jj --no-pager --color=never file show -r <id> <path>` |
 | Untrack ignored file | `jj file untrack <path>` (path must already be ignored) |
 | Delete file in a revision | `jj file delete -r <id> <path>` (do not use `jj file edit`; it opens an editor) |
+| List configuration | `jj --no-pager --color=never config list` |
+| Get configuration value | `jj --no-pager --color=never config get <key>` |
 | Set / create bookmark | `jj bookmark set <name> -r <target>` |
 | Rename bookmark | `jj bookmark rename <old> <new>` |
 | Move bookmark backward/sideways | Inspect graph, then `jj bookmark set <name> -r <target> --allow-backwards` |
