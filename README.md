@@ -72,6 +72,7 @@ jj --no-pager --color=never status
 
 ### 3. Multi-Agent Workspace Orchestration Playbook
 - **Isolated Workspaces**: Complete playbook for spawning $N$ parallel subagents in separate `jj workspace` instances.
+- **Trusted Workspace Location**: Create workspaces under `.jj-workspaces/` inside the coordinator's launch directory, not in sibling directories. Agent tools trust the launch directory tree, so parallel agents avoid per-file permission prompts in Claude Code, Cursor, Antigravity, and similar tools without any tool-specific configuration. jj does not snapshot nested workspaces into the parent; ignore `.jj-workspaces/` globally (`core.excludesFile`) or in `.git/info/exclude` for Git-side tools.
 - **Base Pinning**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Do not wrap `jj` in a shell assignment, and do not move or push `main` when merging agent work back.
 - **Sparse Checkouts (`jj sparse`)**: Restrict workspaces to relevant subdirectories to reduce disk footprint and index times:
   ```bash

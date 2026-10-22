@@ -611,6 +611,21 @@ jj sparse set --reset
 
 When coordinating a team of parallel subagents, use `jj workspace` to give each agent an isolated working copy attached to the same repository.
 
+#### 0. Choose the Workspace Location (Trust Boundary)
+
+Where the workspaces live decides whether parallel agents get a prompt on every file read and write. Agent tools (Claude Code, Cursor, Antigravity, and others) grant file trust to the directory the session was launched in and everything beneath it. A sibling such as `../agent-db` is outside that boundary, so each agent prompts for it, and subagents inherit the parent's boundary. No trust setting is common to all tools, so use geometry rather than configuration:
+
+**Put workspaces inside the coordinator's launch directory, under a dedicated subdirectory such as `.jj-workspaces/`.**
+
+- Every tool already trusts that tree, so no per-tool allowlist or settings change is needed.
+- jj does not snapshot a nested workspace into the parent's working copy. Verified on jj 0.46.0: the nested directory contains its own `.jj`, and the parent's `jj status` and `jj file list` stayed clean without any ignore rule.
+- Git-side tools, editors, and `rg`-style indexers do not know that, so make sure `.jj-workspaces/` is ignored. Prefer a global ignore (Git's `core.excludesFile`) that covers every repo. Otherwise add `/.jj-workspaces/` to the repo's `.git/info/exclude` once. Both are local and untracked. Do not add it to the tracked `.gitignore` unless the user asks.
+- Use absolute paths when briefing agents. A subagent starts in the coordinator's cwd and its `cd` does not persist between calls.
+- `jj workspace add` does not create intermediate directories. Create `.jj-workspaces/` once before the first `add`. That is a plain `mkdir -p`, outside the `Bash(jj *)` grant, so ask the user to approve it rather than widening permissions.
+- Claude Code's own worktree feature follows the same rule (`.claude/worktrees/` inside the repo), but it is git-only and cannot create jj workspaces.
+
+If workspaces must live outside the launch directory, the grant is tool-specific and the user must make it. In Claude Code, use `--add-dir`, `/add-dir`, or `permissions.additionalDirectories` in user settings. Never edit those settings on your own, and do not fall back to `bypassPermissions` or similar blanket modes to avoid prompts.
+
 #### 1. Setup from Coordinator Workspace
 
 ```bash
@@ -622,12 +637,13 @@ jj rebase --onto main@origin
 # Do not use a shell assignment, and do not pass the floating bookmark name.
 jj --no-pager --color=never log -r main -T 'commit_id' --no-graph
 
-# Isolated workspaces. --colocate gives each one a Git worktree so tools that
+# Isolated workspaces under the trusted tree (see step 0).
+# --colocate gives each one a Git worktree so tools that
 # require a Git repo keep working. Do not pass --no-colocate.
 # --sparse-patterns full avoids inheriting a sparse parent.
-jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-db
-jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-ui
-jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> ../agent-api
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-db
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-ui
+jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-api
 
 # Verify
 jj --no-pager --color=never workspace list
@@ -636,7 +652,7 @@ jj --no-pager --color=never workspace list
 #### 2. Brief Each Agent with Explicit Contracts
 
 Instruct each parallel agent:
-- Workspace path: e.g. `cd /path/to/agent-db`
+- Workspace path: the absolute path, e.g. `cd <coordinator-root>/.jj-workspaces/agent-db`
 - Scope: e.g. "Only touch files in `db/`"
 - Boundary rules: Never run `jj edit`, `jj squash`, or `jj rebase` on other workspaces. Never touch shared bookmarks (`main`).
 - Finish contract: Label changes with `jj desc -m "db: add user schema"` and stop.
