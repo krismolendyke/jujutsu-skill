@@ -46,7 +46,11 @@ Editor-based commands will fail in non-interactive environments.
 
 7. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
 
-8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in a shell assignment such as `NAME=$(jj ...)`. That command line does not begin with `jj` and may require a separate permission. Read the value from `jj` output and pass it back as a literal argument. Prefer direct revsets in `jj` commands when possible, and never widen permissions merely to avoid a prompt.
+8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in a shell assignment (`NAME=$(jj ...)`), prefix it with `cd <dir> && jj ...`, chain commands with `&&`, `||`, or `;`, or pipe output (`| head`, `| grep`). Compound shell commands do not match `Bash(jj *)` and trigger permission prompts. Instead:
+   - Read values from `jj` output and pass them back as literals, or use revsets directly.
+   - Target another workspace with `jj -R <workspace-path> ...` instead of `cd <workspace-path> && jj ...`.
+   - Use `jj commit -m "..."` (or separate tool calls) instead of `jj desc -m "..." && jj new`.
+   - Limit output with `jj log -n <N>`, `-r`, or `-T` instead of piping to `head` or `grep`.
 
 9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `git.sign-on-push = true`); leave that alone too.
 
@@ -58,70 +62,56 @@ In jj, your working directory is always a commit (referenced as `@`). Changes ar
 
 - **`jj desc -m "..."`**: Labels the current working-copy commit `@`.
 - **`jj new`**: Creates a fresh, empty commit on top of `@` (the previous commit becomes `@-`).
-- **`jj commit -m "..."`**: A convenient one-step shortcut for `jj desc -m "..." && jj new`.
-
-#### The `@` vs `@-` Rule (Where Your Finished Commit Lives)
+- **`jj commit -m "..."`**: One-step shortcut that describes `@` and advances to a new empty commit (`@` becomes `@-`).
 
 | Workflow Pattern | Where Your Labeled Commit Is | Bookmark / Push Target |
 | :--- | :--- | :--- |
 | `jj desc -m "..."` (before `jj new`) | `@` | `-r @` |
 | `jj commit -m "..."` | `@-` (new empty `@` is created) | `-r @-` |
 | `jj desc -m "..."` then `jj new` | `@-` (new empty `@` is created) | `-r @-` |
+| Subagent workspace (`<ws>`) after `jj commit` / `jj new` | `<ws>@-` (`<ws>@` is empty) | `-r <ws>@-` |
 
 ### Commits Are Mutable (Except Immutable Heads)
 
 **CRITICAL**: Unlike git, jj commits can be freely modified after creation. You can update descriptions, squash changes, rebase, and absorb — all without creating new commits.
 
-However, certain revisions (such as `trunk()`, `main`, or pushed remote commits) are marked as **immutable** (`immutable()` revset) to prevent altering shared history. Agents must never attempt to rewrite immutable commits or pass `--ignore-immutable`; instead, always branch off with `jj new <base>`.
+However, certain revisions (such as `trunk()`, `main`, or pushed remote commits) are marked as **immutable** (`immutable()` revset) to prevent altering shared history. Never rewrite immutable commits or pass `--ignore-immutable`; branch off with `jj new <base>`.
 
 ### Change IDs vs Commit IDs
 
-- **Change ID**: A stable identifier (like `tqpwlqmp`) that persists when a commit is rewritten — prefer these when referencing commits
-- **Commit ID**: A content hash (like `3ccf7581`) that changes when commit content changes
+- **Change ID**: A stable identifier (like `tqpwlqmp`) that persists when a commit is rewritten — prefer these when referencing commits.
+- **Commit ID**: A content hash (like `3ccf7581`) that changes when commit content changes.
 
 ### Revsets
 
-jj uses a rich functional revset language to query and select commits:
+jj uses a functional revset language to query and select commits (`jj --no-pager --color=never log -r '<revset>'`):
 
 | Intent | Revset Expression | Description |
 |--------|-------------------|-------------|
 | **Current Stack** | `trunk()..@` | All commits on current branch since trunk |
 | **Stack Tip** | `heads(trunk()..@)` | Top-most commit of the current branch |
 | **Stack Root** | `roots(trunk()..@)` | Base commit of the current branch |
+| **Workspace Commit** | `<ws>@` / `<ws>@-` | Working-copy commit (or parent) of workspace `<ws>` |
+| **All Workspaces** | `working_copies()` | Working-copy `@` commits across all workspaces |
 | **Recent History** | `ancestors(@, 5)` | Last 5 commits leading up to `@` |
 | **Unpushed Commits** | `remote_bookmarks()..` | Commits not yet pushed to any remote |
 | **Conflicts** | `conflicts()` | Commits containing unresolved merge conflicts |
 | **Divergent** | `divergent()` | Commits with split Change IDs (`??`) |
 | **Empty Commits** | `empty() & ~root()` | Empty commits (useful for cleanup) |
-| **Mutable Commits** | `mutable()` | All commits that can be freely rewritten |
-| **Immutable** | `immutable()` | Commits protected from rewriting |
+| **Mutable / Immutable** | `mutable()` / `immutable()` | Rewritable vs. protected commits |
 | **Bookmarks** | `bookmarks()` | Commits marked with bookmarks |
-
-Use revsets with `-r` flags: `jj --no-pager --color=never log -r 'trunk()..@'` or `jj --no-pager --color=never log -r 'conflicts()'`.
 
 ### Machine-Readable Template Queries (`-T` / `--template`)
 
-Agents and scripts can extract specific commit metadata programmatically without terminal graph characters or regex parsing by combining `-T` with `--no-graph`:
+Extract commit metadata without graph characters or regex parsing by combining `-T` with `--no-graph` (read values from output and pass back as literals; never wrap `jj` in `$()`):
 
 ```bash
-# Read these values from the command output and pass them back as literals.
-# Do not wrap jj in a shell assignment; that falls outside Bash(jj *).
 jj --no-pager --color=never log -r @ -T 'change_id' --no-graph
 jj --no-pager --color=never log -r @ -T 'commit_id' --no-graph
-
-# Check if working copy has changes (outputs "true" or "false")
-jj --no-pager --color=never log -r @ -T 'empty' --no-graph
-
-# Check if commit has unresolved conflicts (outputs "true" or "false")
-jj --no-pager --color=never log -r @ -T 'conflict' --no-graph
-
-# Check if commit is protected / immutable (outputs "true" or "false")
-jj --no-pager --color=never log -r @ -T 'immutable' --no-graph
-
-# Query commit description title (first line)
+jj --no-pager --color=never log -r @ -T 'empty' --no-graph        # "true" or "false"
+jj --no-pager --color=never log -r @ -T 'conflict' --no-graph     # "true" or "false"
+jj --no-pager --color=never log -r @ -T 'immutable' --no-graph    # "true" or "false"
 jj --no-pager --color=never log -r @ -T 'description.first_line()' --no-graph
-
-# Compact one-line summary of stack commits (change ID + description)
 jj --no-pager --color=never log -r 'trunk()..@' --no-graph -T 'change_id.shortest(8) ++ " " ++ description.first_line() ++ "\n"'
 ```
 
@@ -131,50 +121,29 @@ jj --no-pager --color=never log -r 'trunk()..@' --no-graph -T 'change_id.shortes
 
 **Always create your commit message before writing code:**
 
-1. **Branching off trunk/main or a specific base**: When starting independent work, create your new revision directly off your intended base (e.g. `main` or a specific commit) rather than accidentally stacking on your current working revision:
+1. **Branching off trunk/main or a specific base**: Create your new revision directly off your intended base rather than stacking on an unrelated working revision:
 
 ```bash
-# Start independent work directly off main/trunk with message
 jj new main -m "Add user authentication to login endpoint"
-
-# Or off any specific revision
 jj new <change-id> -m "Add validation to user input forms"
 ```
 
-2. **Continuing on current branch**: If working on top of the current revision, validate that `@` is empty with `jj --no-pager --color=never st`. If it is not empty, run `jj new` first:
+2. **Continuing on current branch**: Validate that `@` is empty with `jj --no-pager --color=never st`. If not empty, run `jj new` first:
 
 ```bash
-# Ensure you are on a blank commit
 jj new
-
-# Describe what you intend to do
 jj desc -m "Add user authentication to login endpoint"
-
-# Then make your changes - they automatically become part of this commit
 # ... edit files ...
-
-# Check status
 jj --no-pager --color=never status
 ```
 
-### Creating Atomic Commits
+### Creating Atomic Commits & Multi-line Descriptions
 
-Each commit should represent ONE logical change. Use this format for commit messages:
+Each commit should represent ONE logical change using an imperative title (e.g. `"Add validation to user input forms"`, `"Fix null pointer in payment processor"`).
 
-```
-Examples:
-- "Add validation to user input forms"
-- "Fix null pointer in payment processor"
-- "Remove deprecated API endpoints"
-- "Update dependencies to latest versions"
-```
-
-### Multi-line Descriptions (Chaining `-m` Flags)
-
-To write multi-paragraph commit messages without opening an editor or risking shell escaping issues, pass multiple `-m` flags. `jj` automatically separates each `-m` with a blank line (title and body paragraphs):
+To write multi-paragraph commit messages without opening an editor or risking shell escaping issues, chain multiple `-m` flags (`jj` separates each `-m` with a blank line):
 
 ```bash
-# First -m is the title, subsequent -m flags are body paragraphs
 jj desc \
   -m "Add OAuth2 authentication provider" \
   -m "Introduce Google and GitHub OAuth handlers with token refresh." \
@@ -183,63 +152,30 @@ jj desc \
 
 ### Viewing History
 
-Use `diff` to compare repository trees. Use `interdiff` to compare how the patch itself changed between two revisions, such as before and after revising or rebasing a change. Always provide both endpoints so the comparison is explicit:
+Use `diff` to compare repository trees and `interdiff` (always with explicit `--from` and `--to`) to compare how a patch evolved across rewrites or rebases:
 
 ```bash
+jj --no-pager --color=never log
+jj --no-pager --color=never log -p
+jj --no-pager --color=never show --git <change-id>
+jj --no-pager --color=never diff --git
 jj --no-pager --color=never interdiff --from <old-revision> --to <new-revision> --git
 ```
 
-```bash
-# View recent commits
-jj --no-pager --color=never log
+**Why `--git` is required on `diff`/`show`/`interdiff`**: Default `jj diff` outputs side-by-side line numbers, and user configs often set `ui.diff-formatter` to external tools (Difftastic, Delta). Passing `--git` forces a clean, unified `+`/`-` diff.
 
-# View with patches
-jj --no-pager --color=never log -p
-
-# View specific commit
-jj --no-pager --color=never show --git <change-id>
-
-# View diff of working copy (use --git for familiar +/- format)
-jj --no-pager --color=never diff --git
-```
-
-**IMPORTANT: Why `jj diff --git` is required**:
-1. Default `jj diff` uses a side-by-side line number format (e.g. `26   26:`) rather than standard unified diff format.
-2. User configurations often set `ui.diff-formatter` to external diff tools (e.g. Difftastic or Delta). Adding `--git` bypasses external tools and guarantees a clean, machine-parseable unified diff with standard `+`/`-` line prefixes.
-
-### Moving Between Commits
+### Moving Between Commits & Finishing Work (`jj new`)
 
 ```bash
-# Create a new empty commit on top of current
-jj new
-
-# Create a new commit whose message lives on @ (this does not park an empty child)
-jj new -m "Commit message"
-
-# Create new commit branching off a specific base
-jj new main -m "New branch off main"
-jj new <base-change-id> -m "New branch off base"
-
-# Edit an existing commit (working copy becomes that commit)
-jj edit <change-id>
-
-# Edit the previous commit
-jj prev -e
-
-# Edit the next commit
-jj next -e
+jj new                              # Create a fresh empty commit on top of @ (protects completed @-)
+jj new -m "Commit message"          # Create a new commit with message on @ (does not park an empty child)
+jj new main -m "New branch"         # Branch off main (or <base-change-id>)
+jj edit <change-id>                 # Edit an existing mutable commit (@ becomes that commit)
+jj prev -e                          # Edit parent commit
+jj next -e                          # Edit child commit
 ```
 
-### Finishing Work: Always Advance to a New Empty Commit (`jj new`)
-
-**CRITICAL**: When you finish your task, refine a commit, or complete a change:
-
-```bash
-# Always run jj new when finished to protect the completed commit
-jj new
-```
-
-Because jj automatically records changes into the current working-copy commit (`@`), leaving `@` on your completed commit means any subsequent command, agent action, or manual file edit will silently mutate it. Running `jj new` moves `@` to a fresh, empty child commit, safely preserving your completed work.
+**CRITICAL**: Because jj snapshots working-directory edits into `@` automatically, leaving `@` on a finished commit means any subsequent command or manual edit silently mutates it. Always run `jj new` (or `jj commit -m "..."`) when finishing a task so `@` is parked on a fresh, empty child commit.
 
 ## Refining Commits
 
@@ -471,7 +407,7 @@ Jujutsu respects standard `.gitignore` files in the repository. In addition, you
 
 ### Inspecting Configuration (`jj config`)
 
-Query Jujutsu configuration non-interactively without opening config editors:
+Query Jujutsu configuration non-interactively without opening config editors (user config: `~/.config/jj/config.toml`; repo config: `<repo>/.jj/repo/config.toml`):
 
 ```bash
 # List all active configuration settings (from user and repo configs)
@@ -481,86 +417,58 @@ jj --no-pager --color=never config list
 jj --no-pager --color=never config get user.name
 jj --no-pager --color=never config get user.email
 
-# Query with fallback if setting is not defined
-jj --no-pager --color=never config get revsets.bookmark-advance-to || true
+# Safe query when a key may be unset (exits 0 with warning instead of failing; avoids || true)
+jj --no-pager --color=never config list revsets.bookmark-advance-to
 ```
-
-Config files reside in:
-- User-level: `~/.config/jj/config.toml`
-- Repository-level: `<repo>/.jj/repo/config.toml`
 
 ## Working with Bookmarks (Branches)
 
-Bookmarks are jj's equivalent to git branches.
-
-**Agent Tip (Idempotent Bookmark Setting)**: Use `jj bookmark set <name> -r <revset>` (defaults to `-r @`). If the bookmark exists, it moves it; if not, it creates it. This avoids errors from calling `create` on existing bookmarks or `move` on new ones.
+Bookmarks are jj's equivalent to git branches. Use `jj bookmark set <name> -r <revset>` (defaults to `-r @`): it creates or moves the bookmark idempotently.
 
 For safety, `bookmark set` and `bookmark move` refuse to move a bookmark backward or sideways by default. If that movement is intentional, inspect the graph first, then use `--allow-backwards`. Do not add this flag automatically after an error: moving a shared bookmark backward can require a force-push and overwrite collaborators' published history.
 
 ```bash
-# Create or move bookmark to current commit (idempotent - recommended for agents)
-jj bookmark set my-feature -r @
-
-# Explicitly create a new bookmark
-jj bookmark create my-feature -r @
-
-# Move an existing bookmark forward to a different commit
+jj bookmark set my-feature -r @             # Create or move bookmark (idempotent)
+jj bookmark create my-feature -r @          # Explicitly create a new bookmark
 jj bookmark move my-feature --to <change-id>
 
 # Deliberately move backward/sideways only after inspecting the graph
 jj --no-pager --color=never log -r 'my-feature | <change-id>'
 jj bookmark set my-feature -r <change-id> --allow-backwards
 
-# Advance the closest ancestor bookmarks forward.
-# --to defaults to revsets.bookmark-advance-to, which itself defaults to @.
-# There is no -r flag. A config that sets bookmark-advance-to = "@-" already
-# targets @-; pass --to only to override that.
+# Advance closest ancestor bookmarks forward (--to defaults to revsets.bookmark-advance-to, which defaults to @)
 jj bookmark advance
 jj bookmark advance --to @-
 
-# List bookmarks
 jj --no-pager --color=never bookmark list
-
-# Rename a bookmark
 jj bookmark rename old-name new-name
-
-# Delete a bookmark (marks deletion to push to remote)
-jj bookmark delete my-feature
-
-# Forget a bookmark (removes locally without pushing deletion)
-jj bookmark forget my-feature
-
-# Track a remote bookmark locally (e.g. from git remote)
+jj bookmark delete my-feature               # Marks deletion to push to remote
+jj bookmark forget my-feature               # Removes locally without pushing deletion
 jj bookmark track my-feature@origin
-
-# Untrack a remote bookmark (stops synchronizing with remote)
 jj bookmark untrack my-feature@origin
 ```
 
 ## Workspaces
 
-A **workspace** is a working copy plus its associated repo. One repo can have multiple workspaces — each with its own working directory and working-copy commit (`@`) — all sharing the same commits, operations, and bookmarks. This is jj's equivalent of `git worktree`.
-
-Useful for running a long build or test in one workspace while editing in another. Workspaces are a rarely-needed feature; consult the [official docs](https://docs.jj-vcs.dev/latest/working-copy/#workspaces) for anything beyond the basics below.
+A **workspace** is a working copy plus its associated repo. One repo can have multiple workspaces — each with its own working directory and working-copy commit (`@`, shown as `<workspace-name>@` in `jj log`) — all sharing the same commits, operations, and bookmarks. This is jj's equivalent of `git worktree`, ideal for parallel subagents or isolated test/build checkouts.
 
 ### Common commands
 
 ```bash
-# Create a new workspace (defaults: name = basename of path, parent = current @'s parent).
-# Pass --colocate so the workspace is a Git worktree. Tools that require a
-# Git repo keep working. Do not pass --no-colocate.
-# --sparse-patterns defaults to copy (inherit the parent's sparse patterns).
-jj workspace add --colocate --sparse-patterns full ../my-tests
-jj workspace add --colocate --sparse-patterns full --name tests -r <change-id> ../my-tests
+# Create a new workspace under the trusted .jj-workspaces/ directory (defaults: name = basename of path).
+# Always pass --colocate so the workspace is a Git worktree and Git-dependent tools keep working.
+# --sparse-patterns full avoids inheriting a sparse parent (defaults to copy).
+jj workspace add --colocate --sparse-patterns full .jj-workspaces/my-tests
+jj workspace add --colocate --sparse-patterns full --name tests -r <change-id> .jj-workspaces/my-tests
+
+# Run jj commands against another workspace without changing directories (stays inside Bash(jj *))
+jj --no-pager --color=never -R .jj-workspaces/my-tests status
 
 # Inspect. list/root show every recorded path, including unreachable ones.
-# root prints a warning for an unreachable path; that warning does not mean
-# the workspace is missing from the list.
 jj --no-pager --color=never workspace list
 jj --no-pager --color=never workspace root [--name <ws>]
 
-# Unregister a workspace. Does not delete the working-copy directory.
-# If the workspace had a Git worktree, that worktree registration is removed.
+# Unregister a workspace (removes Git worktree registration if colocated; leaves directory on disk)
 jj workspace forget [<ws>]
 
 # Snapshot the working copy, then delete the workspace directory from disk.
@@ -571,60 +479,44 @@ jj workspace remove <ws>
 jj workspace rename <new-name>
 ```
 
-In `jj log`, each workspace's `@` appears as `<workspace-name>@`.
-
-### Key semantics
+### Key semantics & agent guidance
 
 - **Isolation by default.** `jj workspace add` gives the new workspace its own fresh empty commit; workspaces don't start out sharing `@`, and on-disk files are never live-mirrored between them.
-- **Propagation at command boundaries.** Each jj command snapshots the current workspace's files and reads the op log, so it sees commits/bookmarks made by other workspaces. There is no filesystem watcher.
-- **Stale working copy.** If another workspace rewrites this workspace's `@` (e.g. via `jj squash`, `rebase`, `abandon`), jj refuses commands here until you run `jj workspace update-stale`. Same recovery path if a command was interrupted mid-update.
-- **Shared `@` is sharp-edged.** `jj edit <id>` lets two workspaces point at the same change without warning. When one mutates it, the other goes stale; if the stale one had un-snapshotted edits, `update-stale` preserves them as a **divergent commit** (same change ID, shown as `xyz??` in `jj log`) that you must resolve. Avoid sharing `@` unless both workspaces are read-only.
-
-### Agent guidance
-
-- Always pass `--no-pager` and `--color=never` to `jj workspace list`.
-- Don't `jj edit` a change another workspace already has as its `@` — main cause of accidental divergence.
-- Don't `jj file edit`; it opens an editor. Use `jj file delete` to remove a path from a revision.
-- To delete a workspace directory, `jj workspace remove <name>` snapshots first and stays inside `Bash(jj *)`. Do not `rm -rf` a workspace directory. `jj workspace forget` only unregisters it.
-- If `jj undo` or `jj redo` refuses because the operation was in another workspace, stop. Do not pass `--allow-cross-workspace`.
+- **Propagation at command boundaries.** Each jj command snapshots the target workspace's files and reads the op log, so it sees commits/bookmarks made by other workspaces.
+- **Stale working copy.** If another workspace rewrites a workspace's `@` (via `squash`, `rebase`, `abandon`), jj refuses commands there until you run `jj workspace update-stale` (or `jj -R <ws-path> workspace update-stale`).
+- **Never share `@` across active workspaces.** `jj edit <id>` lets two workspaces point at the same change without warning. When one mutates it, the other goes stale and un-snapshotted edits become a **divergent commit** (`xyz??`).
+- **Use `jj -R <path>` instead of `cd <path> && jj ...`.** Shell `cd` does not persist across tool calls and `cd ... && jj ...` breaks `Bash(jj *)`.
+- **Clean up with `jj workspace remove <name>`.** It snapshots first and stays inside `Bash(jj *)`. Never `rm -rf` a workspace directory.
+- **Cross-workspace undo.** If `jj undo` or `jj redo` refuses because the operation was in another workspace, stop. Do not pass `--allow-cross-workspace`.
 
 ### Sparse Workspaces (`jj sparse`)
 
 For large repositories or multi-agent workflows, sparse checkouts limit the files materialized in a workspace to reduce disk I/O and index overhead:
 
 ```bash
-# List active sparse checkout patterns
 jj --no-pager --color=never sparse list
-
-# Restrict workspace to specific directories
 jj sparse set --clear --add src/ --add packages/backend/
-
-# Add or remove directory patterns
 jj sparse set --add packages/frontend/
 jj sparse set --remove legacy/
-
-# Reset sparse configuration to checkout the entire repo
 jj sparse set --reset
 ```
 
 ### Multi-Agent Coordinator Playbook
 
-When coordinating a team of parallel subagents, use `jj workspace` to give each agent an isolated working copy attached to the same repository.
+When coordinating parallel subagents, use `jj workspace` to give each agent an isolated working copy attached to the same repository.
 
 #### 0. Choose the Workspace Location (Trust Boundary)
 
-Where the workspaces live decides whether parallel agents get a prompt on every file read and write. Agent tools (Claude Code, Cursor, Antigravity, and others) grant file trust to the directory the session was launched in and everything beneath it. A sibling such as `../agent-db` is outside that boundary, so each agent prompts for it, and subagents inherit the parent's boundary. No trust setting is common to all tools, so use geometry rather than configuration:
+Agent tools (Claude Code, Cursor, Antigravity, and others) grant file trust to the directory the session was launched in and everything beneath it. A sibling such as `../agent-db` is outside that boundary, triggering permission prompts on every file read/write.
 
-**Put workspaces inside the coordinator's launch directory, under a dedicated subdirectory such as `.jj-workspaces/`.**
+**Put workspaces inside the coordinator's launch directory, under `.jj-workspaces/`.**
 
 - Every tool already trusts that tree, so no per-tool allowlist or settings change is needed.
-- jj does not snapshot a nested workspace into the parent's working copy. Verified on jj 0.46.0: the nested directory contains its own `.jj`, and the parent's `jj status` and `jj file list` stayed clean without any ignore rule.
-- Git-side tools, editors, and `rg`-style indexers do not know that, so make sure `.jj-workspaces/` is ignored. Prefer a global ignore (Git's `core.excludesFile`) that covers every repo. Otherwise add `/.jj-workspaces/` to the repo's `.git/info/exclude` once. Both are local and untracked. Do not add it to the tracked `.gitignore` unless the user asks.
-- Use absolute paths when briefing agents. A subagent starts in the coordinator's cwd and its `cd` does not persist between calls.
-- `jj workspace add` does not create intermediate directories. Create `.jj-workspaces/` once before the first `add`. That is a plain `mkdir -p`, outside the `Bash(jj *)` grant, so ask the user to approve it rather than widening permissions.
-- Claude Code's own worktree feature follows the same rule (`.claude/worktrees/` inside the repo), but it is git-only and cannot create jj workspaces.
-
-If workspaces must live outside the launch directory, the grant is tool-specific and the user must make it. In Claude Code, use `--add-dir`, `/add-dir`, or `permissions.additionalDirectories` in user settings. Never edit those settings on your own, and do not fall back to `bypassPermissions` or similar blanket modes to avoid prompts.
+- jj 0.46.0 does not snapshot a nested workspace into the parent's working copy (`jj status` and `jj file list` stay clean without any ignore rule).
+- Git-side tools, editors, and `rg`-style indexers still need `.jj-workspaces/` ignored. Prefer a global ignore (Git's `core.excludesFile`) or add `/.jj-workspaces/` to `.git/info/exclude` once. Both are local and untracked. Do not add it to tracked `.gitignore` unless asked.
+- `jj workspace add` does not create intermediate directories. Create `.jj-workspaces/` once before the first `add` (`mkdir -p` is outside `Bash(jj *)`, so ask the user to approve it rather than widening permissions).
+- In harnesses with built-in subagent workspace modes (e.g. Antigravity's `Workspace: "inherit"` or Claude Code's git-only `.claude/worktrees/`), keep the harness workspace set to `inherit` and manage isolation through `.jj-workspaces/<agent>`.
+- If workspaces must live outside the launch directory, the user must configure tool-specific directory grants (e.g. `--add-dir` in Claude Code); never edit settings files or enable `bypassPermissions`.
 
 #### 1. Setup from Coordinator Workspace
 
@@ -633,14 +525,10 @@ If workspaces must live outside the launch directory, the grant is tool-specific
 jj git fetch
 jj rebase --onto main@origin
 
-# Read the commit id and pass that literal to --revision.
-# Do not use a shell assignment, and do not pass the floating bookmark name.
+# Read the commit id and pass that literal to --revision (never use $() or a floating bookmark name)
 jj --no-pager --color=never log -r main -T 'commit_id' --no-graph
 
-# Isolated workspaces under the trusted tree (see step 0).
-# --colocate gives each one a Git worktree so tools that
-# require a Git repo keep working. Do not pass --no-colocate.
-# --sparse-patterns full avoids inheriting a sparse parent.
+# Create isolated colocated workspaces under .jj-workspaces/
 jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-db
 jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-ui
 jj workspace add --colocate --sparse-patterns full --revision <pinned-commit-id> .jj-workspaces/agent-api
@@ -651,113 +539,85 @@ jj --no-pager --color=never workspace list
 
 #### 2. Brief Each Agent with Explicit Contracts
 
-Instruct each parallel agent:
-- Workspace path: the absolute path, e.g. `cd <coordinator-root>/.jj-workspaces/agent-db`
-- Scope: e.g. "Only touch files in `db/`"
-- Boundary rules: Never run `jj edit`, `jj squash`, or `jj rebase` on other workspaces. Never touch shared bookmarks (`main`).
-- Finish contract: Label changes with `jj desc -m "db: add user schema"` and stop.
+Subagents start in the coordinator's CWD and `cd` does not persist across tool calls. Instruct each parallel agent:
+- **File paths**: Read and edit files using full paths under `<coordinator-root>/.jj-workspaces/agent-db/...`.
+- **jj commands**: Always pass `-R .jj-workspaces/agent-db` (e.g. `jj --no-pager --color=never -R .jj-workspaces/agent-db status`). Never chain `cd ... && jj ...`, which breaks `Bash(jj *)` and risks running in the coordinator root if `cd` is omitted.
+- **Scope & boundaries**: Only touch assigned paths (e.g. `db/`). Never run `jj edit`, `jj squash`, or `jj rebase` on other workspaces' commits, and never touch shared bookmarks (`main`).
+- **Finish contract**: Commit and advance to an empty working copy with `jj -R .jj-workspaces/agent-db commit -m "db: add user schema"` (or `jj -R ... desc -m "..."` then `jj -R ... new`). This parks `agent-db@` on a fresh empty commit and leaves the finished work cleanly on `agent-db@-`.
 
 #### 3. Merge Back & Cleanup (from Coordinator Workspace)
 
+Because each subagent finishes with `jj commit` / `jj new`, its completed commit is directly addressable via the `<workspace-name>@-` revset (or `<pinned-commit-id>..<workspace-name>@-` for multi-commit stacks), and rebasing it does not disturb an active commit with unsnapshotted edits:
+
 ```bash
-# 1. Verify independent diffs
-jj --no-pager --color=never diff --stat -r <agent-db-commit>
-jj --no-pager --color=never diff --stat -r <agent-ui-commit>
+# 1. Verify each agent's diff using its workspace revset
+jj --no-pager --color=never diff --stat -r 'agent-db@-'
+jj --no-pager --color=never diff --stat -r 'agent-ui@-'
+jj --no-pager --color=never diff --stat -r 'agent-api@-'
 
-# 2. Rebase each stack onto the pinned trunk commit, not onto the coordinator's @
-jj rebase -s <agent-db-commit> --onto <pinned-commit-id>
-jj rebase -s <agent-ui-commit> --onto <pinned-commit-id>
+# 2A. Option A (Local Stack): Combine parallel agent work into a single linear stack on <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-db@-)' --onto <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-ui@-)' --onto 'agent-db@-'
+jj rebase -s 'roots(<pinned-commit-id>..agent-api@-)' --onto 'agent-ui@-'
 
-# 3. Set a feature bookmark on each rebased stack. Do not move main, master,
-# or any other shared bookmark, and do not point a bookmark at the coordinator's @-.
-jj bookmark set agent-db -r <agent-db-commit>
-jj bookmark set agent-ui -r <agent-ui-commit>
+# 2B. Option B (Separate PR Branches): Keep stacks independent and publish feature bookmarks
+jj rebase -s 'roots(<pinned-commit-id>..agent-db@-)' --onto <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-ui@-)' --onto <pinned-commit-id>
+jj bookmark set agent-db -r 'agent-db@-'
+jj bookmark set agent-ui -r 'agent-ui@-'
 jj git push --dry-run -b agent-db
 jj git push --dry-run -b agent-ui
 jj git push -b agent-db
 jj git push -b agent-ui
 
-# 4. After the user authorizes deletion, snapshot and remove each workspace.
-# workspace remove deletes that workspace's directory. It cannot remove the main workspace.
+# 3. After user authorization, snapshot and remove each workspace directory
 jj workspace remove agent-db
 jj workspace remove agent-ui
 jj workspace remove agent-api
 ```
 
-Do not push `main`. The coordinator's `@-` is not an agent commit. `jj workspace forget` only unregisters a workspace and, when one exists, its Git worktree; it leaves the directory on disk. Prefer `jj workspace remove` when deletion is authorized. Never use an unverified variable, glob, or multi-path recursive deletion command.
+Do not move or push `main`/`master`, and do not point a feature bookmark at the coordinator's `@-`. Prefer `jj workspace remove` when directory deletion is authorized (`jj workspace forget` only unregisters the workspace and leaves the directory on disk).
 
 ## Git Integration
 
-### Working with Existing Git Repos
+### Cloning, Initializing, and Fetching
 
 ```bash
-# Clone a git repository
-jj git clone <url>
-
-# Initialize jj in an existing git repo
-jj git init --colocate
+jj git clone <url>                          # Clone a git repository
+jj git init --colocate                      # Initialize jj in an existing git repo
+jj git fetch                                # Fetch all branches from default remote
+jj git fetch --remote <remote-name>         # Fetch from a specific remote
+jj git fetch -b <branch-name>               # Fetch specific branch
 ```
 
-### Fetching Remote Changes
+After fetching, rebase your work onto the updated trunk: `jj rebase --onto main`.
 
-```bash
-# Fetch all branches from the default remote
-jj git fetch
+### Colocated Safety & Git Pre-Commit Hooks
 
-# Fetch from a specific remote
-jj git fetch --remote <remote-name>
-
-# Fetch specific branches
-jj git fetch -b <branch-name>
-```
-
-After fetching, rebase your work onto the updated trunk: `jj rebase --onto main`
-
-### Colocated Repository Safety
-
-A colocated repository contains both `.jj/` and `.git/`, but agents should still perform version-control operations through `jj` only. Jujutsu keeps Git `HEAD` detached at a commit representing the jj working-copy state, so detached-HEAD warnings from Git-oriented tools are normal and do not need repair.
-
-**Do not run `git checkout` or `git switch` to fix detached HEAD.** Those commands move Git's working tree outside jj's workflow and can create confusing imports or overwrite working-copy state. If a task genuinely requires direct Git operation, stop and request explicit user authorization; it is outside this skill's `Bash(jj *)` permission boundary.
-
-### Git Pre-Commit Hooks Notice
-
-Jujutsu records changes continuously and automatically; it does NOT execute Git `pre-commit` hooks (such as Husky, lefthook, or lint-staged). In projects that rely on Git hooks for formatting or linting, agents must explicitly run the project's formatting and test commands before advancing with `jj new`.
+- **Detached HEAD is normal**: A colocated repo contains both `.jj/` and `.git/` with Git `HEAD` intentionally detached at jj's working copy. Never run `git checkout` or `git switch`. If direct Git access is genuinely required, stop and ask the user (it falls outside `Bash(jj *)`).
+- **Pre-commit hooks do not run automatically**: Jujutsu snapshots continuously without triggering Git `pre-commit` hooks (Husky, lefthook, lint-staged). Run the project's formatters, linters, and tests explicitly before finishing with `jj new`.
 
 ### Pushing Changes
 
-When the user asks you to push changes:
-
-```bash
-# Push a specific bookmark to the remote
-jj git push -b <bookmark-name>
-
-# Example: push the main bookmark
-jj git push -b main
-```
-
 **Before pushing, ensure:**
-1. Your bookmark points to the correct commit (bookmarks don't auto-advance like git branches)
-2. The commits are refined and atomic
-3. The user has explicitly requested the push
+1. Your bookmark points to the intended commit (`-r @` or `-r @-` — bookmarks do not auto-advance like git branches).
+2. The commits are refined and atomic.
+3. The user has explicitly requested the push.
 
-Keep every push explicit. jj 0.46.0 can push several remotes at once (`--remote` is repeatable; `git.push` can name them) and `revsets.git-push` can change which revisions a bare `jj git push` would select. Do not run bare `jj git push`. Do not move or push `main`/`master` unless the user asked to publish that bookmark.
-
-**IMPORTANT**: Unlike git branches, jj bookmarks do not automatically move when you create new commits. Use `jj bookmark set` to safely create or move the bookmark before pushing:
+Keep every push explicit. jj 0.46.0 can push several remotes at once (`--remote` is repeatable; `git.push` can name them) and `revsets.git-push` can change which revisions a bare `jj git push` selects. Never run bare `jj git push`, and never move or push `main`/`master` unless the user explicitly asked to publish that bookmark.
 
 ```bash
-# Safely set (create or move) bookmark to the current commit
-jj bookmark set my-feature -r @
+# Safely set (create or move) bookmark to the finished commit (e.g. @- after jj new, or @ before jj new)
+jj bookmark set my-feature -r @-
 
-# Verify what will change on the remote without executing the push
+# Preview what will change on the remote without executing the push
 jj git push --dry-run -b my-feature
 
-# Push the bookmark to remote
+# Push the bookmark to remote (or specify --remote explicitly)
 jj git push -b my-feature
-
-# Push bookmark explicitly to a specified remote
 jj git push --bookmark my-feature --remote origin
 
-# Push a revision directly by change ID
+# Push a revision directly by change ID (creates an auto-named remote branch)
 jj git push -c <change-id>
 ```
 
@@ -772,165 +632,73 @@ jj --no-pager --color=never log -r 'conflicts()'
 
 **Agent conflict resolution**: Do not use `jj resolve` because it launches an interactive merge tool. Edit conflicted files directly, but do not assume Git's simple `<<<<<<<` / `=======` / `>>>>>>>` three-way format. Jujutsu can materialize snapshot sections marked with `+++++++` and one or more diff sections marked with `%%%%%%%` inside the outer `<<<<<<< Conflict ...` and `>>>>>>> Conflict ... ends` markers. A conflict can have more than two sides, so understand every section before choosing the final content and removing the complete marker block.
 
-After editing, verify both scopes again:
-
-```bash
-# Confirms whether the working-copy commit still has unresolved files
-jj --no-pager --color=never status
-
-# Must return no affected revisions for resolution to be complete across the stack
-jj --no-pager --color=never log -r 'conflicts()'
-```
-
-`jj st` alone only describes `@`; a rebase can leave a conflict in another revision. Do not report conflict resolution complete while the relevant revision still appears in `conflicts()`.
+After editing, re-run both `jj --no-pager --color=never status` and `jj --no-pager --color=never log -r 'conflicts()'`. `jj st` only describes `@`; a rebase can leave a conflict in another revision. Do not report resolution complete while any relevant revision still appears in `conflicts()`.
 
 ## Handling Divergent Commits
 
-Divergence happens when the same Change ID has multiple conflicting commit versions (often marked as `<change-id> ??` in `jj log`). This usually occurs when a change is modified concurrently in two workspaces or operations.
-
-### Diagnosing Divergence
+Divergence happens when the same Change ID has multiple conflicting commit versions (marked `<change-id> ??` in `jj log`), typically when a change is modified concurrently across workspaces or operations.
 
 ```bash
-# Find all divergent commits across the repository
+# 1. Find all divergent commits across the repository
 jj --no-pager --color=never log -r 'divergent()'
-```
 
-### Resolving Divergence
-
-Prefer non-interactive converge first. It aborts instead of prompting when it cannot decide:
-
-```bash
+# 2. Try non-interactive converge first (aborts instead of prompting when ambiguous; never run bare jj converge)
 jj converge --no-interactive
-```
 
-Do not run bare `jj converge`; it prompts. If `--no-interactive` aborts, choose one of these strategies depending on intent:
-
-1. **Keep one version and discard the other**: Use the specific **Commit ID** (not Change ID) to abandon the obsolete version:
-```bash
+# 3A. If converge aborts: keep one version and discard the other using its Commit ID (not Change ID)
 jj abandon <obsolete-commit-id>
-```
 
-2. **Combine both versions**: Squash changes from one version into the other using specific Commit IDs:
-```bash
+# 3B. Or combine both versions using specific Commit IDs
 jj squash --from <source-commit-id> --into <target-commit-id> -u
 ```
 
 ## Megamerges (Multi-Branch Integration & Testing)
 
-A **megamerge** is a local octopus merge commit whose parents are multiple in-flight WIP branches. It allows you to build, test, and run an entire application with multiple independent features applied simultaneously.
-
-```
-        (Combined working copy / tests)
-                       │
-                       ●  megamerge (octopus, local-only)
-                     ╱ │ ╲
-                    ●  ●  ●  feature-a, feature-b, feature-c
-                     ╲ │ ╱
-                       ●  trunk()
-```
-
-### 1. Creating a Megamerge
+A **megamerge** is a local octopus merge commit whose parents are multiple in-flight WIP branches, allowing you to build and test multiple independent features simultaneously:
 
 ```bash
-# Create an octopus merge commit across multiple branches
+# 1. Create an octopus merge commit across multiple branches and advance @ on top of it
 jj new feature-a feature-b feature-c -m "Local megamerge (test only)"
-
-# Advance working copy on top of it
 jj new
-```
 
-### 2. Testing & Propagating Changes
-
-- Run test suites in the combined working copy to confirm that all branches compose cleanly.
-- Use `jj absorb` to distribute fixes from `@` back into whichever parent feature branch last modified the affected lines:
-```bash
+# 2. Run test suites; distribute fixes from @ back into the parent branch that last touched those lines
 jj absorb
-```
 
-### 3. Restacking onto Updated Trunk
-
-When trunk updates, rebase all mutable branches in one command while collapsing redundant edges with `--simplify-parents`:
-
-```bash
+# 3. When trunk updates, restack all mutable branches and collapse redundant edges
 jj rebase --onto trunk() --source 'roots(trunk()..) & mutable()' --simplify-parents
-```
 
-### 4. Pushing from a Megamerge
-
-**CRITICAL**: You never push the megamerge itself. Push each component bookmark individually:
-
-```bash
+# 4. Never push the megamerge itself; push each component bookmark individually
 jj git push -b feature-a
 jj git push -b feature-b
 ```
 
 ## Preserving Commit Quality
 
-**IMPORTANT**: Because commits are mutable, always refine them before considering work done:
-
+Before considering work done:
 1. **Review your commit**: `jj --no-pager --color=never show --git @` or `jj --no-pager --color=never diff --git`
-2. **Is it atomic?** One logical change per commit
-3. **Is the message clear?** Use imperative verb phrase in sentence case format with no full stop: e.g. "Add login endpoint", "Fix null pointer in payment processor", "Remove deprecated API endpoints"
-4. **Are there unrelated changes?** Use `jj restore` to move changes out, then create separate commits
-5. **Should changes be elsewhere?** Use `jj squash -u` or `jj absorb`
-6. **Protect the completed commit**: Always run `jj new` when done so `@` is on a fresh empty revision rather than sitting directly on your finished commit
+2. **Keep it atomic & well-described**: One logical change per commit; imperative sentence-case title with no trailing period (e.g. `"Add login endpoint"`, `"Fix null pointer in payment processor"`).
+3. **Split or move unrelated edits**: Use `jj restore`, `jj squash -u`, or `jj absorb`.
+4. **Protect the completed commit**: Always finish with `jj new` (or `jj commit -m "..."`) so `@` sits on a fresh empty revision.
 
 ## Quick Reference
 
 | Action | Command |
 |--------|---------|
-| Describe commit | `jj desc -m "message"` |
-| View status | `jj --no-pager --color=never status` (or `jj --no-pager --color=never st`) |
-| View log | `jj --no-pager --color=never log` |
-| View diff | `jj --no-pager --color=never diff --git [paths]` |
-| View commit diff | `jj --no-pager --color=never show --git <id>` |
-| View unpushed commits | `jj --no-pager --color=never log -r 'remote_bookmarks()..'` |
-| New commit | If `@` is empty, `jj desc -m "message"`. If it is not, `jj new` first, then `jj desc -m`. `jj new -m` leaves the message on `@` and does not park an empty child |
-| Edit commit | `jj edit <id>` |
-| Squash to parent | `jj squash -u` |
-| Auto-distribute changes | `jj absorb` (or `jj absorb <paths>`) |
-| Verify absorb / changes | `jj --no-pager --color=never op show -p` |
-| Rebase | `jj rebase --onto <destination>` |
+| Describe / commit | `jj desc -m "msg"` (stays on `@`) or `jj commit -m "msg"` (advances `@` to empty child) |
+| View status / log | `jj --no-pager --color=never status` / `jj --no-pager --color=never log` |
+| View diff / commit | `jj --no-pager --color=never diff --git [paths]` / `jj --no-pager --color=never show --git <id>` |
 | Compare patch revisions | `jj --no-pager --color=never interdiff --from <old> --to <new> --git` |
-| Parallelize revisions | `jj parallelize <revisions>` |
-| Duplicate revision | `jj duplicate <id>` |
-| Abandon commit | `jj abandon <id>` |
-| Clean empty commits | `jj abandon 'empty() & mutable() & ~root() & ~@'` |
-| Undo last operation | `jj undo` |
-| Redo operation | `jj redo` |
-| View operation log | `jj --no-pager --color=never op log -n 10` |
-| Preview prior operation | `jj --no-pager --color=never status --at-op=<id>` |
-| Restore to operation | `jj op restore <operation-id>` |
-| Inspect change evolution | `jj --no-pager --color=never evolog -p -r <change-id>` |
-| Restore files | `jj restore [paths]` |
-| List files at rev | `jj --no-pager --color=never file list -r <id>` |
-| Show file content | `jj --no-pager --color=never file show -r <id> <path>` |
-| Untrack ignored file | `jj file untrack <path>` (path must already be ignored) |
-| Delete file in a revision | `jj file delete -r <id> <path>` (do not use `jj file edit`; it opens an editor) |
-| List configuration | `jj --no-pager --color=never config list` |
-| Get configuration value | `jj --no-pager --color=never config get <key>` |
-| Set / create bookmark | `jj bookmark set <name> -r <target>` |
-| Rename bookmark | `jj bookmark rename <old> <new>` |
-| Move bookmark backward/sideways | Inspect graph, then `jj bookmark set <name> -r <target> --allow-backwards` |
-| Advance bookmark | `jj bookmark advance [--to <target>]` (`--to` defaults to `revsets.bookmark-advance-to`) |
-| Track remote bookmark | `jj bookmark track <name>@<remote>` |
-| Untrack remote bookmark | `jj bookmark untrack <name>@<remote>` |
-| Fetch remote | `jj git fetch` |
-| Push bookmark | `jj git push -b <name>` |
-| Push change ID | `jj git push -c <id>` |
-| Add workspace | `jj workspace add --colocate <path>` (do not pass `--no-colocate`) |
-| List workspaces | `jj --no-pager --color=never workspace list` |
-| Forget workspace | `jj workspace forget [name]` (unregisters; does not delete the directory) |
-| Remove workspace directory | `jj workspace remove <name>` (snapshots, then deletes; needs authorization; not the main workspace) |
-| Fix stale working copy | `jj workspace update-stale` |
-| List sparse patterns | `jj --no-pager --color=never sparse list` |
-| Set sparse patterns | `jj sparse set --add <paths>` |
-
-## Best Practices Summary
-
-1. **Describe first**: Set the commit message before coding
-2. **One change per commit**: Keep commits atomic and focused
-3. **Use change IDs**: They're stable across rewrites
-4. **Refine commits**: Leverage mutability for clean history
-5. **Embrace the workflow**: No staging area, no stashing - just commits
-6. **Always finish with `jj new`**: Protect completed work by advancing `@` to a new empty revision
+| Edit / squash / absorb | `jj edit <id>` / `jj squash -u` / `jj absorb [paths]` (verify with `jj --no-pager --color=never op show -p`) |
+| Rebase / parallelize / dup | `jj rebase --onto <dest>` / `jj parallelize <revs>` / `jj duplicate <id>` |
+| Abandon / clean empty | `jj abandon <id>` / `jj abandon 'empty() & mutable() & ~root() & ~@'` |
+| Undo / redo / op log | `jj undo` / `jj redo` / `jj --no-pager --color=never op log -n 10` |
+| Preview / restore op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <operation-id>` |
+| Change evolution | `jj --no-pager --color=never evolog -p -r <change-id>` |
+| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj restore [paths]` |
+| File untrack / delete | `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
+| Inspect config | `jj --no-pager --color=never config list [<key>]` / `jj --no-pager --color=never config get <key>` |
+| Bookmarks | `jj bookmark set <name> -r <target>` / `jj bookmark advance [--to <target>]` / `jj bookmark track <name>@<remote>` |
+| Fetch / push | `jj git fetch` / `jj git push --dry-run -b <name>` / `jj git push -b <name>` / `jj git push -c <id>` |
+| Workspaces | `jj workspace add --colocate --sparse-patterns full .jj-workspaces/<name>` / `jj -R .jj-workspaces/<name> <cmd>` |
+| Workspace cleanup | `jj --no-pager --color=never workspace list` / `jj workspace remove <name>` / `jj workspace update-stale` |
+| Sparse patterns | `jj --no-pager --color=never sparse list` / `jj sparse set --clear --add <paths>` / `jj sparse set --reset` |

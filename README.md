@@ -69,16 +69,18 @@ jj --no-pager --color=never status
 | `jj desc -m "..."` (before `jj new`) | `@` | `-r @` |
 | `jj commit -m "..."` | `@-` (new empty `@` is created) | `-r @-` |
 | `jj desc -m "..."` then `jj new` | `@-` (new empty `@` is created) | `-r @-` |
+| Subagent workspace (`<ws>`) after `jj commit` / `jj new` | `<ws>@-` (`<ws>@` is empty) | `-r <ws>@-` |
 
 ### 3. Multi-Agent Workspace Orchestration Playbook
 - **Isolated Workspaces**: Complete playbook for spawning $N$ parallel subagents in separate `jj workspace` instances.
 - **Trusted Workspace Location**: Create workspaces under `.jj-workspaces/` inside the coordinator's launch directory, not in sibling directories. Agent tools trust the launch directory tree, so parallel agents avoid per-file permission prompts in Claude Code, Cursor, Antigravity, and similar tools without any tool-specific configuration. jj does not snapshot nested workspaces into the parent; ignore `.jj-workspaces/` globally (`core.excludesFile`) or in `.git/info/exclude` for Git-side tools.
-- **Base Pinning**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Do not wrap `jj` in a shell assignment, and do not move or push `main` when merging agent work back.
+- **`jj -R` Without Stateless `cd` Chaining**: Subagents pass `-R .jj-workspaces/<agent>` on every `jj` command instead of `cd ... && jj ...`, staying inside `Bash(jj *)` and preventing accidental mutations of the coordinator root across stateless tool calls.
+- **Base Pinning & `<ws>@-` Revsets**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Subagents finish with `jj commit -m "..."` (or `jj desc` then `jj new`) so completed work lives at `<ws>@-`, allowing the coordinator to diff and rebase stacks directly via `'agent-db@-'` or `'roots(<pinned-commit-id>..agent-db@-)'` (either into a single local linear stack or separate PR branches).
 - **Sparse Checkouts (`jj sparse`)**: Restrict workspaces to relevant subdirectories to reduce disk footprint and index times:
   ```bash
   jj sparse set --clear --add src/ --add packages/backend/
   ```
-- **Agent Contracts & Scopes**: Clear rules for agent prompt contracts, directory scoping, and merge-back workflows (`jj diff --stat`, serial rebasing, and cleanup).
+- **Agent Contracts & Scopes**: Clear rules for agent prompt contracts, directory scoping, and merge-back workflows (`jj diff --stat`, local stack or multi-branch rebasing, and cleanup with `jj workspace remove`).
 
 ### 4. Idempotent Bookmark & Branch Management
 - **Safe Bookmark Updates**: Recommends `jj bookmark set <name> -r <target>` (which creates or moves bookmarks idempotently without erroring).
@@ -184,8 +186,9 @@ cp -R ./jujutsu/. .claude/skills/jujutsu/
 Install globally:
 
 ```bash
-mkdir -p ~/.gemini/config/skills/jujutsu
+mkdir -p ~/.gemini/config/skills/jujutsu ~/.gemini/skills/jujutsu
 cp -R ./jujutsu/. ~/.gemini/config/skills/jujutsu/
+cp -R ./jujutsu/. ~/.gemini/skills/jujutsu/
 ```
 
 Or install locally in a specific workspace:
