@@ -54,6 +54,8 @@ Editor-based commands will fail in non-interactive environments.
 
 9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `git.sign-on-push = true`); leave that alone too.
 
+*(Optional Guardrail Hook: [`./scripts/check-jj-cmd.sh`](./scripts/check-jj-cmd.sh) can be wired into Claude Code or Antigravity `PreToolUse` hooks to deterministically block interactive flags, missing `--no-pager --color=never`, or forbidden flags before execution).*
+
 ## Core Concepts
 
 ### The Working Copy is a Commit (`@` vs `@-`)
@@ -100,6 +102,15 @@ jj uses a functional revset language to query and select commits (`jj --no-pager
 | **Empty Commits** | `empty() & ~root()` | Empty commits (useful for cleanup) |
 | **Mutable / Immutable** | `mutable()` / `immutable()` | Rewritable vs. protected commits |
 | **Bookmarks** | `bookmarks()` | Commits marked with bookmarks |
+
+### Filesets (Path Expressions)
+
+Path arguments in `jj` (`diff`, `restore`, `squash`, `split`, `file list`) are parsed as **filesets** (prefix/exact match by default, not shell globs). Prefix wildcard patterns with `glob:` and combine paths with `&`, `|`, and `~`:
+
+```bash
+jj --no-pager --color=never diff --git 'glob:"**/*.ts"'
+jj --no-pager --color=never diff --git 'src/ & ~src/generated/'
+```
 
 ### Machine-Readable Template Queries (`-T` / `--template`)
 
@@ -446,6 +457,10 @@ jj bookmark delete my-feature               # Marks deletion to push to remote
 jj bookmark forget my-feature               # Removes locally without pushing deletion
 jj bookmark track my-feature@origin
 jj bookmark untrack my-feature@origin
+
+# Resolve a conflicted bookmark (shown as my-feature?? in bookmark list after fetch/rebase)
+jj --no-pager --color=never log -r 'bookmarks(exact:"my-feature")'
+jj bookmark set my-feature -r <target-commit-id> --allow-backwards
 ```
 
 ## Workspaces
@@ -521,6 +536,9 @@ Agent tools (Claude Code, Cursor, Antigravity, and others) grant file trust to t
 #### 1. Setup from Coordinator Workspace
 
 ```bash
+# Check for any leftover workspaces from an interrupted prior run (remove or forget before re-adding)
+jj --no-pager --color=never workspace list
+
 # Bring trunk up to date
 jj git fetch
 jj rebase --onto main@origin
@@ -547,30 +565,36 @@ Subagents start in the coordinator's CWD and `cd` does not persist across tool c
 
 #### 3. Merge Back & Cleanup (from Coordinator Workspace)
 
-Because each subagent finishes with `jj commit` / `jj new`, its completed commit is directly addressable via the `<workspace-name>@-` revset (or `<pinned-commit-id>..<workspace-name>@-` for multi-commit stacks), and rebasing it does not disturb an active commit with unsnapshotted edits:
+Use the revset `<pinned-commit-id>..<ws>@ & ~empty()` to select all non-empty commits in a subagent's stack. This works whether the subagent created one commit or multiple commits, and even if it forgot to run `jj new` at the end:
 
 ```bash
-# 1. Verify each agent's diff using its workspace revset
-jj --no-pager --color=never diff --stat -r 'agent-db@-'
-jj --no-pager --color=never diff --stat -r 'agent-ui@-'
-jj --no-pager --color=never diff --stat -r 'agent-api@-'
+# 1. Verify each agent's full stack diff against the pinned base
+jj --no-pager --color=never diff --from <pinned-commit-id> --to 'heads(<pinned-commit-id>..agent-db@ & ~empty())' --stat
+jj --no-pager --color=never diff --from <pinned-commit-id> --to 'heads(<pinned-commit-id>..agent-ui@ & ~empty())' --stat
+jj --no-pager --color=never diff --from <pinned-commit-id> --to 'heads(<pinned-commit-id>..agent-api@ & ~empty())' --stat
 
-# 2A. Option A (Local Stack): Combine parallel agent work into a single linear stack on <pinned-commit-id>
-jj rebase -s 'roots(<pinned-commit-id>..agent-db@-)' --onto <pinned-commit-id>
-jj rebase -s 'roots(<pinned-commit-id>..agent-ui@-)' --onto 'agent-db@-'
-jj rebase -s 'roots(<pinned-commit-id>..agent-api@-)' --onto 'agent-ui@-'
+# 2. Optional Pre-Integration Check: Create a local megamerge to verify all stacks compose without conflicts
+jj new 'heads(<pinned-commit-id>..agent-db@ & ~empty())' 'heads(<pinned-commit-id>..agent-ui@ & ~empty())' 'heads(<pinned-commit-id>..agent-api@ & ~empty())' -m "Local integration test megamerge"
+jj --no-pager --color=never log -r @ -T 'conflict' --no-graph
+# Run project test suite here if desired, then abandon the temporary megamerge:
+jj abandon @
 
-# 2B. Option B (Separate PR Branches): Keep stacks independent and publish feature bookmarks
-jj rebase -s 'roots(<pinned-commit-id>..agent-db@-)' --onto <pinned-commit-id>
-jj rebase -s 'roots(<pinned-commit-id>..agent-ui@-)' --onto <pinned-commit-id>
-jj bookmark set agent-db -r 'agent-db@-'
-jj bookmark set agent-ui -r 'agent-ui@-'
+# 3A. Option A (Local Stack): Combine parallel agent stacks into a single linear stack on <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-db@ & ~empty())' --onto <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-ui@ & ~empty())' --onto 'heads(<pinned-commit-id>..agent-db@ & ~empty())'
+jj rebase -s 'roots(<pinned-commit-id>..agent-api@ & ~empty())' --onto 'heads(<pinned-commit-id>..agent-ui@ & ~empty())'
+
+# 3B. Option B (Separate PR Branches): Keep stacks independent and publish feature bookmarks
+jj rebase -s 'roots(<pinned-commit-id>..agent-db@ & ~empty())' --onto <pinned-commit-id>
+jj rebase -s 'roots(<pinned-commit-id>..agent-ui@ & ~empty())' --onto <pinned-commit-id>
+jj bookmark set agent-db -r 'heads(<pinned-commit-id>..agent-db@ & ~empty())'
+jj bookmark set agent-ui -r 'heads(<pinned-commit-id>..agent-ui@ & ~empty())'
 jj git push --dry-run -b agent-db
 jj git push --dry-run -b agent-ui
 jj git push -b agent-db
 jj git push -b agent-ui
 
-# 3. After user authorization, snapshot and remove each workspace directory
+# 4. After user authorization, snapshot and remove each workspace directory
 jj workspace remove agent-db
 jj workspace remove agent-ui
 jj workspace remove agent-api
@@ -592,10 +616,10 @@ jj git fetch -b <branch-name>               # Fetch specific branch
 
 After fetching, rebase your work onto the updated trunk: `jj rebase --onto main`.
 
-### Colocated Safety & Git Pre-Commit Hooks
+### Colocated Safety & Git Pre-Commit Hooks (`jj fix`)
 
 - **Detached HEAD is normal**: A colocated repo contains both `.jj/` and `.git/` with Git `HEAD` intentionally detached at jj's working copy. Never run `git checkout` or `git switch`. If direct Git access is genuinely required, stop and ask the user (it falls outside `Bash(jj *)`).
-- **Pre-commit hooks do not run automatically**: Jujutsu snapshots continuously without triggering Git `pre-commit` hooks (Husky, lefthook, lint-staged). Run the project's formatters, linters, and tests explicitly before finishing with `jj new`.
+- **Pre-commit hooks do not run automatically**: Jujutsu snapshots continuously without triggering Git `pre-commit` hooks (Husky, lefthook, lint-staged). Run the project's formatters, linters, and tests explicitly before finishing with `jj new`. If `fix.tools` is configured (`jj --no-pager --color=never config list fix.tools`), run `jj fix -s 'roots(trunk()..@)'` to format all mutable commits in your stack non-interactively.
 
 ### Pushing Changes
 

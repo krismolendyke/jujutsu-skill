@@ -27,7 +27,7 @@ uninstall:
 uninstall-local:
     rm -rf .claude/skills/jujutsu .agents/skills/jujutsu
 
-check: check-patterns check-sync
+check: check-patterns check-hook check-sync
 
 check-patterns:
     @echo "Checking SKILL.md and README.md for interactive or un-guarded commands..."
@@ -36,9 +36,32 @@ check-patterns:
     @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|op (log|show)|file (list|show)|config (list|get)|bookmark list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (squash|converge|git push)[[:space:]]*$" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj --no-pager --color=never (diff|show|interdiff)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
+    @! grep -nE "^[[:space:]]*jj [^#]*(--ignore-immutable|--allow-cross-workspace)" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj [^#]*(\|\||&&|\|[[:space:]]*(head|tail|grep|rg|awk|sed|wc|sort|less|more|cat|xargs)\b)" jujutsu/SKILL.md README.md
     @test "$(wc -l < jujutsu/SKILL.md)" -lt 800 || (echo "jujutsu/SKILL.md exceeds 800-line single-read limit" && exit 1)
     @echo "All pattern checks passed."
+
+check-hook:
+    @echo "Testing jujutsu/scripts/check-jj-cmd.sh..."
+    @chmod +x jujutsu/scripts/check-jj-cmd.sh
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never status"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never -R .jj-workspaces/agent-db diff --git"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m 'Fix jj resolve and -i handling in status'"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj split -r @ -m 'Split file' path/to/file.txt"
+    @./jujutsu/scripts/check-jj-cmd.sh "npm test"
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj status" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj squash -i" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj resolve" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj file edit foo.txt" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj rebase --ignore-immutable --onto main" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj undo --allow-cross-workspace" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "cd .jj-workspaces/agent-db && jj --no-pager --color=never status" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj git push" 2>/dev/null
+    @echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj squash -i"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "deny"'
+    @echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj --no-pager --color=never status"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "allow"'
+    @! (echo '{"tool_input":{"command":"jj squash -i"}}' | ./jujutsu/scripts/check-jj-cmd.sh >/dev/null 2>&1)
+    @echo "All hook checks passed."
 
 check-sync:
     @echo "Checking sync with global installs..."

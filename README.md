@@ -75,12 +75,12 @@ jj --no-pager --color=never status
 - **Isolated Workspaces**: Complete playbook for spawning $N$ parallel subagents in separate `jj workspace` instances.
 - **Trusted Workspace Location**: Create workspaces under `.jj-workspaces/` inside the coordinator's launch directory, not in sibling directories. Agent tools trust the launch directory tree, so parallel agents avoid per-file permission prompts in Claude Code, Cursor, Antigravity, and similar tools without any tool-specific configuration. jj does not snapshot nested workspaces into the parent; ignore `.jj-workspaces/` globally (`core.excludesFile`) or in `.git/info/exclude` for Git-side tools.
 - **`jj -R` Without Stateless `cd` Chaining**: Subagents pass `-R .jj-workspaces/<agent>` on every `jj` command instead of `cd ... && jj ...`, staying inside `Bash(jj *)` and preventing accidental mutations of the coordinator root across stateless tool calls.
-- **Base Pinning & `<ws>@-` Revsets**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Subagents finish with `jj commit -m "..."` (or `jj desc` then `jj new`) so completed work lives at `<ws>@-`, allowing the coordinator to diff and rebase stacks directly via `'agent-db@-'` or `'roots(<pinned-commit-id>..agent-db@-)'` (either into a single local linear stack or separate PR branches).
+- **Base Pinning & Resilient `<pinned>..<ws>@ & ~empty()` Revsets**: Read the trunk commit id with `jj --no-pager --color=never log -r main -T 'commit_id' --no-graph` and pass that literal to `jj workspace add --revision`. Coordinator merge-back uses `<pinned-commit-id>..<ws>@ & ~empty()` to select all non-empty subagent commits (whether 1 or $N$ commits, with or without trailing `jj new`), supports optional pre-merge integration testing via a temporary megamerge, and rebases into either a single local linear stack or separate PR branches.
 - **Sparse Checkouts (`jj sparse`)**: Restrict workspaces to relevant subdirectories to reduce disk footprint and index times:
   ```bash
   jj sparse set --clear --add src/ --add packages/backend/
   ```
-- **Agent Contracts & Scopes**: Clear rules for agent prompt contracts, directory scoping, and merge-back workflows (`jj diff --stat`, local stack or multi-branch rebasing, and cleanup with `jj workspace remove`).
+- **Agent Contracts & Scopes**: Clear rules for agent prompt contracts, directory scoping, pre-flight workspace checks, and merge-back workflows (`jj diff --stat`, local stack or multi-branch rebasing, and cleanup with `jj workspace remove`).
 
 ### 4. Idempotent Bookmark & Branch Management
 - **Safe Bookmark Updates**: Recommends `jj bookmark set <name> -r <target>` (which creates or moves bookmarks idempotently without erroring).
@@ -126,13 +126,17 @@ jj --no-pager --color=never status
   jj --no-pager --color=never config list
   jj --no-pager --color=never config get user.name
   ```
-- **Git Hooks Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work.
-- **File Inspection & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager --color=never file show`), and manage untracked agent artifacts via `.jj/ignore`.
+- **Git Hooks & `jj fix` Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work (or use `jj fix -s 'roots(trunk()..@)'` when `fix.tools` is configured).
+- **Filesets & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager --color=never file show`), scope path expressions with filesets (`'glob:"**/*.ts"'`, `'src/ & ~src/generated/'`), and manage untracked agent artifacts via `.jj/ignore`.
 - **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), unpushed changes (`remote_bookmarks()..`), and empty mutable commit cleanup:
   ```bash
   # Abandon empty mutable commits (excluding root and @)
   jj abandon 'empty() & mutable() & ~root() & ~@'
   ```
+
+### 8. Optional `PreToolUse` Guardrail Hook (`scripts/check-jj-cmd.sh`)
+- Bundles a fast, token-aware guardrail script (`jujutsu/scripts/check-jj-cmd.sh`) that deterministically blocks interactive flags (`-i`, `--interactive`, `--editor`, `--tool`), editor/merge commands (`jj file edit`, `jj resolve`, bare `jj desc`/`squash`/`converge`/`git push`), forbidden flags (`--ignore-immutable`, `--allow-cross-workspace`), compound shell operators (`&&`, `||`, `|`, `$()`), and output commands missing `--no-pager --color=never` or `--git`/`--stat`.
+- Works out of the box with both **Claude Code** (`settings.json` `PreToolUse` matcher `"Bash"`) and **Antigravity** (`hooks.json` `PreToolUse` matcher `"run_command"`).
 
 ## Installation
 
@@ -157,9 +161,10 @@ just install-local-antigravity
 just uninstall
 just uninstall-local
 
-# Verify doc patterns and sync status
+# Verify doc patterns, hook test suite, and sync status
 just check
 just check-patterns
+just check-hook
 just check-sync
 ```
 
@@ -204,7 +209,9 @@ cp -R ./jujutsu/. .agents/skills/jujutsu/
 
 ```
 jujutsu/
-└── SKILL.md    # Complete jj agent workflow instructions and quick reference
+├── SKILL.md                  # Complete jj agent workflow instructions and quick reference
+└── scripts/
+    └── check-jj-cmd.sh       # Optional PreToolUse guardrail hook for Claude Code & Antigravity
 ```
 
 ## Contributing
