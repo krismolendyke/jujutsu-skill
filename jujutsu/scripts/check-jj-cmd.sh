@@ -24,6 +24,8 @@ OUTPUT_SUBCOMMANDS = {
     ("op", "show"),
     ("file", "list"),
     ("file", "show"),
+    ("file", "search"),
+    ("file", "annotate"),
     ("config", "list"),
     ("config", "get"),
     ("bookmark", "list"),
@@ -116,8 +118,10 @@ def validate_command(cmd: str) -> str | None:
                 if "=" in tok
                 else (tokens[i + 1] if i + 1 < len(tokens) else "")
             )
-            if "signing.behavior" in val:
-                return "Do not override 'signing.behavior'; stop and report signing errors."
+            if any(k in val for k in ("signing.behavior", "git-sign-on-push", "sign-on-push")):
+                return (
+                    "Do not override signing configuration ('signing.behavior' or 'revsets.git-sign-on-push'); stop and report signing errors."
+                )
             i += 1 if "=" in tok else 2
         elif tok.startswith("-"):
             i += 1
@@ -159,8 +163,10 @@ def validate_command(cmd: str) -> str | None:
                 if "=" in arg
                 else (args[idx + 1] if idx + 1 < len(args) else "")
             )
-            if "signing.behavior" in val:
-                return "Do not override 'signing.behavior'; stop and report signing errors."
+            if any(k in val for k in ("signing.behavior", "git-sign-on-push", "sign-on-push")):
+                return (
+                    "Do not override signing configuration ('signing.behavior' or 'revsets.git-sign-on-push'); stop and report signing errors."
+                )
         if arg in ("-h", "--help"):
             has_help = True
 
@@ -241,7 +247,7 @@ def validate_command(cmd: str) -> str | None:
     if is_output_cmd and not (has_no_pager and has_color_never):
         return (
             "Always pass '--no-pager --color=never' to output-producing jj commands "
-            "(status, log, diff, show, interdiff, evolog, op log/show, file list/show, "
+            "(status, log, diff, show, interdiff, evolog, op log/show, file list/show/search/annotate, "
             "config list/get, bookmark list, workspace list/root, sparse list, --help)."
         )
 

@@ -33,7 +33,7 @@ check-patterns:
     @echo "Checking SKILL.md and README.md for interactive or un-guarded commands..."
     @! grep -nE "^[[:space:]]*jj (squash|split|diff|diffedit|restore|absorb) -i\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (file edit|resolve)\b" jujutsu/SKILL.md README.md
-    @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|op (log|show)|file (list|show)|config (list|get)|bookmark list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
+    @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|op (log|show)|file (list|show|search|annotate)|config (list|get)|bookmark list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (squash|converge|git push)[[:space:]]*$" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj --no-pager --color=never (diff|show|interdiff)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
     @! grep -nE "^[[:space:]]*jj [^#]*(--ignore-immutable|--allow-cross-workspace)" jujutsu/SKILL.md README.md
@@ -48,6 +48,7 @@ check-hook:
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never -R .jj-workspaces/agent-db diff --git"
     @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m 'Fix jj resolve and -i handling in status'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj split -r @ -m 'Split file' path/to/file.txt"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ pattern"
     @./jujutsu/scripts/check-jj-cmd.sh "npm test"
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff" 2>/dev/null
@@ -56,6 +57,8 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file edit foo.txt" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj rebase --ignore-immutable --onto main" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj undo --allow-cross-workspace" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj file search pattern" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --config 'revsets.git-sign-on-push=\"none()\"' git push -b feat" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "cd .jj-workspaces/agent-db && jj --no-pager --color=never status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj git push" 2>/dev/null
     @echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj squash -i"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "deny"'

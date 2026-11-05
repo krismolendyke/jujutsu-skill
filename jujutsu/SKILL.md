@@ -8,7 +8,7 @@ allowed-tools: Bash(jj *)
 
 This skill helps you work with Jujutsu, a Git-compatible VCS with mutable commits and automatic rebasing.
 
-**Tested with jj v0.46.0.** Commands may differ in other versions. `jj workspace add --colocate`/`--no-colocate`, `jj workspace remove`, `jj file delete`, and `jj undo --allow-cross-workspace` require 0.46.0.
+**Tested with jj v0.47.1.** Commands may differ in other versions. `jj workspace add --colocate`/`--no-colocate`, `jj workspace remove`, `jj file delete`, and `jj undo --allow-cross-workspace` require 0.46.0+; `revsets.git-sign-on-push` requires 0.47.1+.
 
 ## Important: Automated/Agent Environment
 
@@ -52,7 +52,7 @@ Editor-based commands will fail in non-interactive environments.
    - Use `jj commit -m "..."` (or separate tool calls) instead of `jj desc -m "..." && jj new`.
    - Limit output with `jj log -n <N>`, `-r`, or `-T` instead of piping to `head` or `grep`.
 
-9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `git.sign-on-push = true`); leave that alone too.
+9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, `revsets.git-sign-on-push`, or `git.sign-on-push`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `revsets.git-sign-on-push = "~signed() & mine()"`); leave that alone too.
 
 *(Optional Guardrail Hook: [`./scripts/check-jj-cmd.sh`](./scripts/check-jj-cmd.sh) can be wired into Claude Code or Antigravity `PreToolUse` hooks to deterministically block interactive flags, missing `--no-pager --color=never`, or forbidden flags before execution).*
 
@@ -105,7 +105,7 @@ jj uses a functional revset language to query and select commits (`jj --no-pager
 
 ### Filesets (Path Expressions)
 
-Path arguments in `jj` (`diff`, `restore`, `squash`, `split`, `file list`) are parsed as **filesets** (prefix/exact match by default, not shell globs). Prefix wildcard patterns with `glob:` and combine paths with `&`, `|`, and `~`:
+Path arguments in `jj` (`diff`, `restore`, `squash`, `split`, `file list`, `file search`) are parsed as **filesets** (prefix/exact match by default, not shell globs). Prefix wildcard patterns with `glob:` and combine paths with `&`, `|`, and `~`:
 
 ```bash
 jj --no-pager --color=never diff --git 'glob:"**/*.ts"'
@@ -322,7 +322,7 @@ jj op restore <operation-id>
 
 Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation. Preview with `--at-op` first to confirm what will be restored.
 
-As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace. If that happens, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
+As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace (`jj workspace add` is attributed to the workspace it was run in as of 0.47.0). If `undo`/`redo` refuses due to another workspace, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
 
 For a targeted view of how one change evolved across rewrites, inspect its evolution log:
 
@@ -393,6 +393,9 @@ jj --no-pager --color=never file list -r <change-id>
 
 # Print file contents from a specific historical revision directly to stdout
 jj --no-pager --color=never file show -r <change-id> path/to/file.txt
+
+# Search file contents at a revision without checking it out (detects binary files in 0.47.0+)
+jj --no-pager --color=never file search -r <change-id> <pattern> [paths]
 
 # Stop tracking a file without deleting it from the filesystem.
 # The path must already match an ignore rule.
@@ -471,7 +474,7 @@ A **workspace** is a working copy plus its associated repo. One repo can have mu
 
 ```bash
 # Create a new workspace under the trusted .jj-workspaces/ directory (defaults: name = basename of path).
-# Always pass --colocate so the workspace is a Git worktree and Git-dependent tools keep working.
+# Always pass --colocate so the workspace is a Git worktree and Git-dependent tools keep working (non-colocated workspaces also do not auto-export remote-tracking Git refs on fetch/push in 0.47.0+).
 # --sparse-patterns full avoids inheriting a sparse parent (defaults to copy).
 jj workspace add --colocate --sparse-patterns full .jj-workspaces/my-tests
 jj workspace add --colocate --sparse-patterns full --name tests -r <change-id> .jj-workspaces/my-tests
@@ -486,7 +489,7 @@ jj --no-pager --color=never workspace root [--name <ws>]
 # Unregister a workspace (removes Git worktree registration if colocated; leaves directory on disk)
 jj workspace forget [<ws>]
 
-# Snapshot the working copy, then delete the workspace directory from disk.
+# Snapshot the working copy, then delete the workspace directory from disk (also works on stale workspaces in 0.47.0+).
 # Cannot remove the main workspace. Requires explicit authorization.
 jj workspace remove <ws>
 
@@ -501,8 +504,8 @@ jj workspace rename <new-name>
 - **Stale working copy.** If another workspace rewrites a workspace's `@` (via `squash`, `rebase`, `abandon`), jj refuses commands there until you run `jj workspace update-stale` (or `jj -R <ws-path> workspace update-stale`).
 - **Never share `@` across active workspaces.** `jj edit <id>` lets two workspaces point at the same change without warning. When one mutates it, the other goes stale and un-snapshotted edits become a **divergent commit** (`xyz??`).
 - **Use `jj -R <path>` instead of `cd <path> && jj ...`.** Shell `cd` does not persist across tool calls and `cd ... && jj ...` breaks `Bash(jj *)`.
-- **Clean up with `jj workspace remove <name>`.** It snapshots first and stays inside `Bash(jj *)`. Never `rm -rf` a workspace directory.
-- **Cross-workspace undo.** If `jj undo` or `jj redo` refuses because the operation was in another workspace, stop. Do not pass `--allow-cross-workspace`.
+- **Clean up with `jj workspace remove <name>`.** It snapshots first (and handles stale workspaces in 0.47.0+) while staying inside `Bash(jj *)`. Never `rm -rf` a workspace directory (`jj config gc` cleans up configs for deleted workspace paths).
+- **Cross-workspace undo.** `jj workspace add` is attributed to the calling workspace (0.47.0+), so `jj undo` there undoes it cleanly. If `jj undo` or `jj redo` refuses because an operation was performed in another workspace, stop. Do not pass `--allow-cross-workspace`.
 
 ### Sparse Workspaces (`jj sparse`)
 
@@ -718,7 +721,7 @@ Before considering work done:
 | Undo / redo / op log | `jj undo` / `jj redo` / `jj --no-pager --color=never op log -n 10` |
 | Preview / restore op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <operation-id>` |
 | Change evolution | `jj --no-pager --color=never evolog -p -r <change-id>` |
-| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj restore [paths]` |
+| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file search -r <id> <pattern>` / `jj restore [paths]` |
 | File untrack / delete | `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
 | Inspect config | `jj --no-pager --color=never config list [<key>]` / `jj --no-pager --color=never config get <key>` |
 | Bookmarks | `jj bookmark set <name> -r <target>` / `jj bookmark advance [--to <target>]` / `jj bookmark track <name>@<remote>` |

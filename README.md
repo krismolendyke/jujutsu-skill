@@ -13,9 +13,9 @@ Working with Jujutsu in automated or agentic coding environments requires specif
 
 ## Compatibility
 
-**Tested with:** `jj v0.46.0`
+**Tested with:** `jj v0.47.1`
 
-This skill is designed for `jj v0.46.0`. Workspace colocation flags, `jj workspace remove`, `jj file delete`, and cross-workspace `jj undo`/`jj redo` require that version.
+This skill is designed for `jj v0.47.1` (workspace colocation flags, `jj workspace remove`, `jj file delete`, and cross-workspace `jj undo`/`jj redo` require `0.46.0+`; `revsets.git-sign-on-push` requires `0.47.1+`).
 
 ## Key Skill Features & Agent Guardrails
 
@@ -127,7 +127,7 @@ jj --no-pager --color=never status
   jj --no-pager --color=never config get user.name
   ```
 - **Git Hooks & `jj fix` Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work (or use `jj fix -s 'roots(trunk()..@)'` when `fix.tools` is configured).
-- **Filesets & Local Ignore**: Query tracked files, read historical file contents (`jj --no-pager --color=never file show`), scope path expressions with filesets (`'glob:"**/*.ts"'`, `'src/ & ~src/generated/'`), and manage untracked agent artifacts via `.jj/ignore`.
+- **Filesets, Historical Search & Local Ignore**: Query tracked files, read or search historical file contents (`jj --no-pager --color=never file show`, `jj --no-pager --color=never file search`), scope path expressions with filesets (`'glob:"**/*.ts"'`, `'src/ & ~src/generated/'`), and manage untracked agent artifacts via `.jj/ignore`.
 - **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), unpushed changes (`remote_bookmarks()..`), and empty mutable commit cleanup:
   ```bash
   # Abandon empty mutable commits (excluding root and @)
@@ -216,7 +216,7 @@ jujutsu/
 
 ## Contributing
 
-Contributions are welcome. Please ensure any changes are compatible with `jj v0.46.0` and follow agent-safe non-interactive practices.
+Contributions are welcome. Please ensure any changes are compatible with `jj v0.47.1` and follow agent-safe non-interactive practices.
 
 ## License
 
