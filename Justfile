@@ -32,10 +32,11 @@ check: check-patterns check-hook check-sync
 check-patterns:
     @echo "Checking SKILL.md and README.md for interactive or un-guarded commands..."
     @! grep -nE "^[[:space:]]*jj (squash|split|diff|diffedit|restore|absorb) -i\b" jujutsu/SKILL.md README.md
-    @! grep -nE "^[[:space:]]*jj (file edit|resolve)\b" jujutsu/SKILL.md README.md
-    @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|op (log|show)|file (list|show|search|annotate)|config (list|get)|bookmark list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
+    @! grep -nE "^[[:space:]]*jj (file edit|config edit|resolve|arrange)\b" jujutsu/SKILL.md README.md
+    @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|evolution-log|root|op (log|show|diff)|operation (log|show|diff)|file (list|show|search|annotate)|config (list|get|path)|bookmark list|tag list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (squash|converge|git push)[[:space:]]*$" jujutsu/SKILL.md README.md
-    @! grep -nE "^[[:space:]]*jj --no-pager --color=never (diff|show|interdiff)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
+    @! grep -nE "^[[:space:]]*jj --no-pager --color=never (diff|show|interdiff|op diff|operation diff)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
+    @! grep -nE "^[[:space:]]*jj --no-pager --color=never (log|evolog|evolution-log|op (show|log)|operation (show|log))\b[^#]*[[:space:]](-p|--patch)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
     @! grep -nE "^[[:space:]]*jj [^#]*(--ignore-immutable|--allow-cross-workspace)" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj [^#]*(\|\||&&|\|[[:space:]]*(head|tail|grep|rg|awk|sed|wc|sort|less|more|cat|xargs)\b)" jujutsu/SKILL.md README.md
     @test "$(wc -l < jujutsu/SKILL.md)" -lt 800 || (echo "jujutsu/SKILL.md exceeds 800-line single-read limit" && exit 1)
@@ -47,14 +48,27 @@ check-hook:
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never status"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never -R .jj-workspaces/agent-db diff --git"
     @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m 'Fix jj resolve and -i handling in status'"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m='- Bullet item with leading hyphen'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj split -r @ -m 'Split file' path/to/file.txt"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ pattern"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -p --git"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op show -p --git"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj revert -r @- --onto @"
     @./jujutsu/scripts/check-jj-cmd.sh "npm test"
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -p" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op show -p" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op diff" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj squash -i" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj resolve" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj arrange" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file edit foo.txt" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj config edit --user" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj ci" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj desc -m '- Unattached leading hyphen'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj split --after @- -m 'Missing fileset'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj revert -r @-" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj rebase --ignore-immutable --onto main" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj undo --allow-cross-workspace" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file search pattern" 2>/dev/null

@@ -20,18 +20,37 @@ OUTPUT_SUBCOMMANDS = {
     ("show",),
     ("interdiff",),
     ("evolog",),
+    ("evolution-log",),
+    ("root",),
+    ("help",),
     ("op", "log"),
     ("op", "show"),
+    ("op", "diff"),
+    ("operation", "log"),
+    ("operation", "show"),
+    ("operation", "diff"),
     ("file", "list"),
     ("file", "show"),
     ("file", "search"),
     ("file", "annotate"),
     ("config", "list"),
+    ("config", "l"),
     ("config", "get"),
+    ("config", "g"),
+    ("config", "path"),
+    ("config", "p"),
     ("bookmark", "list"),
+    ("bookmark", "l"),
+    ("b", "list"),
+    ("b", "l"),
+    ("tag", "list"),
+    ("tag", "l"),
     ("workspace", "list"),
     ("workspace", "root"),
     ("sparse", "list"),
+    ("git", "root"),
+    ("git", "remote", "list"),
+    ("git", "colocation", "status"),
 }
 
 GLOBAL_VALUE_FLAGS = {
@@ -140,6 +159,11 @@ def validate_command(cmd: str) -> str | None:
     rest = tokens[sub_idx:]
     sub1 = rest[0]
     sub2 = rest[1] if len(rest) > 1 and not rest[1].startswith("-") else None
+    sub3 = (
+        rest[2]
+        if sub2 is not None and len(rest) > 2 and not rest[2].startswith("-")
+        else None
+    )
     args = rest[1:]
 
     # Global ban on forbidden flags anywhere in args
@@ -157,6 +181,11 @@ def validate_command(cmd: str) -> str | None:
             return (
                 f"Never pass '{arg}'; interactive prompts and external editors hang agent sessions."
             )
+        if arg in ("-m", "--message") and idx + 1 < len(args) and args[idx + 1].startswith("-"):
+            return (
+                "Message text starting with '-' after '-m' is parsed as a CLI flag by jj. "
+                "Use '-m=\"- ...\"' or '--message=\"- ...\"' instead."
+            )
         if arg in ("--config", "--config-toml") or arg.startswith("--config="):
             val = (
                 arg.split("=", 1)[1]
@@ -171,10 +200,19 @@ def validate_command(cmd: str) -> str | None:
             has_help = True
 
     # Subcommand-specific interactive checks
-    if sub1 == "diffedit" or sub1 == "resolve" or (sub1 == "file" and sub2 == "edit"):
-        cmd_name = f"jj {sub1}" if sub1 != "file" else "jj file edit"
+    if (
+        sub1 in ("diffedit", "resolve", "arrange")
+        or (sub1 == "file" and sub2 == "edit")
+        or (sub1 == "config" and sub2 in ("edit", "e"))
+    ):
+        if sub1 == "file":
+            cmd_name = "jj file edit"
+        elif sub1 == "config":
+            cmd_name = f"jj config {sub2}"
+        else:
+            cmd_name = f"jj {sub1}"
         return (
-            f"Do not run '{cmd_name}'; it launches an interactive editor/merge tool. "
+            f"Do not run '{cmd_name}'; it launches an interactive TUI, editor, or merge tool. "
             "Edit files directly or use non-interactive jj commands."
         )
 
@@ -192,8 +230,8 @@ def validate_command(cmd: str) -> str | None:
     if sub1 in ("desc", "describe") and not has_help and not has_msg_flag(args):
         return "Always pass '-m \"...\"' to 'jj desc' to avoid opening an interactive editor."
 
-    if sub1 == "commit" and not has_help and not has_msg_flag(args):
-        return "Always pass '-m \"...\"' to 'jj commit' to avoid opening an interactive editor."
+    if sub1 in ("commit", "ci") and not has_help and not has_msg_flag(args):
+        return f"Always pass '-m \"...\"' to 'jj {sub1}' to avoid opening an interactive editor."
 
     if sub1 == "squash" and not has_help:
         has_u = any(a in ("-u", "--use-destination-message") for a in args)
@@ -207,7 +245,8 @@ def validate_command(cmd: str) -> str | None:
         positional = []
         value_flags = {
             "-r", "--revision", "-o", "--onto", "-d", "--destination",
-            "-A", "--insert-after", "-B", "--insert-before", "-m", "--message",
+            "-A", "--insert-after", "--after", "-B", "--insert-before", "--before",
+            "-m", "--message",
         }
         for a in args:
             if skip_next:
@@ -221,6 +260,30 @@ def validate_command(cmd: str) -> str | None:
                 positional.append(a)
         if not positional:
             return "Always pass explicit file path(s) to 'jj split' so it does not open a diff editor."
+
+    if sub1 == "revert" and not has_help:
+        rev_flags = ("-r", "--revision", "--revisions")
+        dest_flags = (
+            "-o", "--onto", "-d", "--destination",
+            "-A", "--insert-after", "--after",
+            "-B", "--insert-before", "--before",
+        )
+        has_rev = any(
+            a in rev_flags
+            or a.startswith("-r")
+            or any(a.startswith(f + "=") for f in rev_flags)
+            for a in args
+        )
+        has_dest = any(
+            a in dest_flags
+            or any(a.startswith(f + "=") for f in dest_flags)
+            for a in args
+        )
+        if not (has_rev and has_dest):
+            return (
+                "Always pass both '-r <revset>' and a destination flag "
+                "('--onto', '-A', or '-B') to 'jj revert' (e.g. 'jj revert -r <id> --onto @')."
+            )
 
     if sub1 == "git" and sub2 == "push" and not has_help:
         push_args = rest[2:]
@@ -243,21 +306,40 @@ def validate_command(cmd: str) -> str | None:
         has_help
         or (sub1,) in OUTPUT_SUBCOMMANDS
         or (sub2 is not None and (sub1, sub2) in OUTPUT_SUBCOMMANDS)
+        or (
+            sub2 is not None
+            and sub3 is not None
+            and (sub1, sub2, sub3) in OUTPUT_SUBCOMMANDS
+        )
     )
     if is_output_cmd and not (has_no_pager and has_color_never):
         return (
             "Always pass '--no-pager --color=never' to output-producing jj commands "
-            "(status, log, diff, show, interdiff, evolog, op log/show, file list/show/search/annotate, "
-            "config list/get, bookmark list, workspace list/root, sparse list, --help)."
+            "(status, log, diff, show, interdiff, evolog, root, op log/show/diff, "
+            "file list/show/search/annotate, config list/get/path, bookmark/tag list, "
+            "workspace list/root, sparse list, git root/remote list/colocation status, --help)."
         )
 
-    # Check --git or --stat on diff/show/interdiff
-    if sub1 in ("diff", "show", "interdiff") and not has_help:
+    # Check --git or --stat on diff/show/interdiff, op diff, and -p/--patch commands
+    has_patch_flag = any(a in ("-p", "--patch") for a in args)
+    needs_diff_format = (
+        sub1 in ("diff", "show", "interdiff")
+        or (sub1 in ("op", "operation") and sub2 == "diff")
+        or (
+            has_patch_flag
+            and (
+                sub1 in ("log", "evolog", "evolution-log")
+                or (sub1 in ("op", "operation") and sub2 in ("show", "log"))
+            )
+        )
+    )
+    if needs_diff_format and not has_help:
         diff_format_flags = ("--git", "--stat", "--summary", "-s", "--name-only", "--types")
         if not any(a in diff_format_flags for a in args):
+            target_cmd = f"jj {sub1} {sub2}" if sub1 in ("op", "operation") and sub2 else f"jj {sub1}"
             return (
-                f"Always pass '--git' (or '--stat') to 'jj {sub1}' to bypass external "
-                "diff formatters and side-by-side output."
+                f"Always pass '--git' (or '--stat') to '{target_cmd}' when rendering diffs "
+                "to bypass external diff formatters and side-by-side output."
             )
 
     return None

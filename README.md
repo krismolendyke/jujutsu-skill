@@ -21,9 +21,9 @@ This skill is designed for `jj v0.47.1` (workspace colocation flags, `jj workspa
 
 ### 1. Automated Environment Safeguards
 - **Pager & Subcommand Isolation**: Mandates `--no-pager`, `--color=never`, and explicit subcommands (`jj --no-pager --color=never status`, `jj --no-pager --color=never log`) to prevent hangs, bypass user-configured `ui.default-command`, and override `ui.color = "always"`.
-- **Clean Unified Diffs**: Enforces `jj --no-pager --color=never diff --git`, `jj --no-pager --color=never interdiff --git`, and `jj --no-pager --color=never show --git` to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
-- **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags for structured title and body paragraphs) to avoid editor prompts.
-- **No Interactive Flags**: Strictly avoids `-i` / `--interactive` across all subcommands (`squash`, `split`, `diff`, `diffedit`, `restore`, `absorb`).
+- **Clean Unified Diffs**: Enforces `jj --no-pager --color=never diff --git`, `jj --no-pager --color=never interdiff --git`, `jj --no-pager --color=never show --git`, `jj --no-pager --color=never op diff --git`, and `--git` whenever `-p`/`--patch` is passed (`log -p --git`, `evolog -p --git`, `op show -p --git`) to override custom external diff tools (e.g. Difftastic, Delta) and line-number side-by-side output.
+- **Non-Interactive Inputs**: Uses inline `-m` flags (including chained `-m` flags and `-m="- ..."` for hyphen-prefixed bullet paragraphs) to avoid editor prompts.
+- **No Interactive Flags or TUIs**: Strictly avoids `-i` / `--interactive` across all subcommands (`squash`, `split`, `diff`, `diffedit`, `restore`, `absorb`) as well as interactive TUI/editor subcommands (`jj arrange`, `jj file edit`, `jj config edit`, `jj resolve`).
 - **Detached HEAD Guardrail**: Explicitly prevents agents from running `git checkout/switch` in response to benign detached HEAD warnings in colocated repos.
 - **Strict Immutability**: Prohibits `--ignore-immutable` and enforces branching off protected heads (`main`, trunk, remote tracking) via `jj new <base>`.
 
@@ -101,16 +101,17 @@ jj --no-pager --color=never status
 ### 5. Advanced Tree Manipulation & Megamerges
 - **Targeted Squashing**: Move changes directly into/from specific revisions without full rebases (`jj squash --into <id>`, `jj squash --from <id>`, `-u`).
 - **Parallelizing Commits**: Convert sequential, orthogonal commits into parallel sibling branches off a common parent with `jj parallelize`.
-- **Targeted Absorption**: Absorb changes into ancestor commits automatically (`jj absorb`) or restrict absorption to specific paths (`jj absorb path/to/file`), then verify with `jj --no-pager --color=never op show -p`.
-- **Duplicating Revisions (`jj duplicate`)**: Create independent sibling copies of changes with fresh Change IDs for experimental spikes and refactoring spikes:
+- **Targeted Absorption**: Absorb changes into ancestor commits automatically (`jj absorb`) or restrict absorption to specific paths (`jj absorb path/to/file`), then verify with `jj --no-pager --color=never op show -p --git`.
+- **Duplicating & Reverting Revisions (`jj duplicate`, `jj revert`)**: Create independent sibling copies of changes with fresh Change IDs (`jj duplicate <change-id>`) or apply reverse-diff commits (`jj revert -r <change-id> --onto @`):
   ```bash
   jj duplicate <change-id>
+  jj revert -r <change-id> --onto @
   ```
 - **Stack Rebasing**: Idiomatic branch and stack rebasing onto trunk with `jj rebase -b @ --onto main` and roots revsets.
 - **Megamerges for Testing**: Create local octopus merges (`jj new feat-a feat-b feat-c`) to compile, test, and verify multiple in-flight features together without pushing the merge commit.
 
 ### 6. Multi-Step Disaster Recovery
-- **Operation Log Rollback & Non-Destructive Preview**: Preview prior repository state via `jj --no-pager --color=never status --at-op=<operation-id>` or `log --at-op=<operation-id>`, and restore state with `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
+- **Operation Log Rollback, Single-Op Revert & Non-Destructive Preview**: Preview prior repository state via `jj --no-pager --color=never status --at-op=<operation-id>` or `log --at-op=<operation-id>`, revert a single earlier operation with `jj op revert <operation-id>`, or restore full repository state with `jj op restore <operation-id>` alongside `jj undo` / `jj redo`.
 
 ### 7. Historical Inspection & Scripting Recipes
 - **Machine-Readable Scripting (`-T` / `--template`)**: Query `change_id`, `commit_id`, `empty`, `conflict`, `immutable`, and one-line summaries without graph pollution or regex parsing:
@@ -135,8 +136,46 @@ jj --no-pager --color=never status
   ```
 
 ### 8. Optional `PreToolUse` Guardrail Hook (`scripts/check-jj-cmd.sh`)
-- Bundles a fast, token-aware guardrail script (`jujutsu/scripts/check-jj-cmd.sh`) that deterministically blocks interactive flags (`-i`, `--interactive`, `--editor`, `--tool`), editor/merge commands (`jj file edit`, `jj resolve`, bare `jj desc`/`squash`/`converge`/`git push`), forbidden flags (`--ignore-immutable`, `--allow-cross-workspace`), compound shell operators (`&&`, `||`, `|`, `$()`), and output commands missing `--no-pager --color=never` or `--git`/`--stat`.
-- Works out of the box with both **Claude Code** (`settings.json` `PreToolUse` matcher `"Bash"`) and **Antigravity** (`hooks.json` `PreToolUse` matcher `"run_command"`).
+- Bundles a fast, token-aware guardrail script (`jujutsu/scripts/check-jj-cmd.sh`) that deterministically blocks interactive flags (`-i`, `--interactive`, `--editor`, `--tool`), TUI/editor/merge commands (`jj arrange`, `jj file edit`, `jj config edit`, `jj resolve`, bare `jj desc`/`commit`/`ci`/`squash`/`converge`/`git push`, incomplete `jj revert`), unescaped hyphen-prefixed `-m "- ..."` arguments, forbidden flags (`--ignore-immutable`, `--allow-cross-workspace`), compound shell operators (`&&`, `||`, `|`, `$()`), and output/diff commands missing `--no-pager --color=never` or `--git`/`--stat` (including `-p`/`--patch` and `op diff`).
+- Works out of the box with both **Claude Code** (`~/.claude/settings.json`) and **Antigravity** (`~/.gemini/config/hooks.json` or `.agents/hooks.json`):
+
+```json
+// Claude Code (~/.claude/settings.json)
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/skills/jujutsu/scripts/check-jj-cmd.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```json
+// Antigravity (~/.gemini/config/hooks.json or .agents/hooks.json)
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.gemini/config/skills/jujutsu/scripts/check-jj-cmd.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ## Installation
 

@@ -36,7 +36,7 @@ jj squash -m "message"    # NOT: jj squash (which opens editor)
 
 Editor-based commands will fail in non-interactive environments.
 
-3. **Never use `-i` or `--interactive` flags**: Subcommands like `squash -i`, `diff -i`, `diffedit`, `restore -i`, `absorb -i`, and `jj file edit` launch interactive terminal prompts or editors that will hang automated agents. `jj split` does too unless you pass both a fileset and `-m` (and do not pass `--editor`). Always use non-interactive flags or explicit path arguments.
+3. **Never use `-i` or `--interactive` flags**: Subcommands like `squash -i`, `diff -i`, `diffedit`, `restore -i`, `absorb -i`, `jj arrange`, `jj file edit`, `jj config edit`, and `jj resolve` launch interactive terminal prompts, TUIs, or editors that will hang automated agents. `jj split` does too unless you pass both a fileset and `-m` (and do not pass `--editor`). Always use non-interactive flags or explicit path arguments.
 
 4. **Verify operations after mutations** (`squash`, `abandon`, `rebase`, `restore`). Run `jj --no-pager --color=never status`, inspect the affected graph with `jj --no-pager --color=never log`, and check relevant content invariants; a successful exit alone does not prove that the intended changes were preserved.
 
@@ -152,13 +152,14 @@ jj --no-pager --color=never status
 
 Each commit should represent ONE logical change using an imperative title (e.g. `"Add validation to user input forms"`, `"Fix null pointer in payment processor"`).
 
-To write multi-paragraph commit messages without opening an editor or risking shell escaping issues, chain multiple `-m` flags (`jj` separates each `-m` with a blank line):
+To write multi-paragraph commit messages without opening an editor or risking shell escaping issues, chain multiple `-m` flags (`jj` separates each `-m` with a blank line). When a message paragraph starts with `-` (such as a bullet item), attach it with `=` (`-m="- ..."` or `--message="- ..."`) so the CLI parser does not mistake the leading hyphen for a flag:
 
 ```bash
 jj desc \
   -m "Add OAuth2 authentication provider" \
   -m "Introduce Google and GitHub OAuth handlers with token refresh." \
-  -m "- Implement callback router\n- Add token refresh middleware"
+  -m="- Implement callback router" \
+  -m="- Add token refresh middleware"
 ```
 
 ### Viewing History
@@ -167,13 +168,13 @@ Use `diff` to compare repository trees and `interdiff` (always with explicit `--
 
 ```bash
 jj --no-pager --color=never log
-jj --no-pager --color=never log -p
+jj --no-pager --color=never log -p --git
 jj --no-pager --color=never show --git <change-id>
 jj --no-pager --color=never diff --git
 jj --no-pager --color=never interdiff --from <old-revision> --to <new-revision> --git
 ```
 
-**Why `--git` is required on `diff`/`show`/`interdiff`**: Default `jj diff` outputs side-by-side line numbers, and user configs often set `ui.diff-formatter` to external tools (Difftastic, Delta). Passing `--git` forces a clean, unified `+`/`-` diff.
+**Why `--git` is required on `diff`/`show`/`interdiff`/`op diff` and `-p`/`--patch` (`log -p`, `evolog -p`, `op show -p`)**: Default `jj` diff output uses side-by-side line numbers, and user configs often set `ui.diff-formatter` to external tools (Difftastic, Delta). Passing `--git` (or `--stat`) forces a clean, unified `+`/`-` diff across all diff-rendering commands.
 
 ### Moving Between Commits & Finishing Work (`jj new`)
 
@@ -271,19 +272,22 @@ jj absorb
 jj absorb path/to/file.txt
 
 # Verify what was absorbed via the operation diff
-jj --no-pager --color=never op show -p
+jj --no-pager --color=never op show -p --git
 ```
 
-### Abandoning Commits
+### Abandoning or Reverting Commits
 
-Remove a commit entirely (descendants are rebased to its parent):
+Remove a commit entirely (descendants are rebased to its parent), or create a new commit that applies the reverse diff of an existing revision:
 
 ```bash
-# Abandon a specific commit
+# Abandon a specific mutable commit
 jj abandon <change-id>
 
 # Clean up empty mutable commits left over from rebases or abandoned work
 jj abandon 'empty() & mutable() & ~root() & ~@'
+
+# Create a new commit that reverses a revision's changes (requires both -r and --onto/-A/-B)
+jj revert -r <change-id> --onto @
 ```
 
 ### Duplicating Revisions (`jj duplicate`)
@@ -318,16 +322,19 @@ jj --no-pager --color=never log --at-op=<operation-id> -n 5
 
 # Restore the entire repository state to a specific prior operation ID
 jj op restore <operation-id>
+
+# Revert a single earlier operation without rolling back subsequent operations
+jj op revert <operation-id>
 ```
 
-Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation. Preview with `--at-op` first to confirm what will be restored.
+Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation (prefer `jj op revert <operation-id>` when reversing a single historical operation). Preview with `--at-op` first to confirm what will be restored.
 
 As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace (`jj workspace add` is attributed to the workspace it was run in as of 0.47.0). If `undo`/`redo` refuses due to another workspace, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
 
 For a targeted view of how one change evolved across rewrites, inspect its evolution log:
 
 ```bash
-jj --no-pager --color=never evolog -p -r <change-id>
+jj --no-pager --color=never evolog -p --git -r <change-id>
 ```
 
 Use the displayed commit IDs to inspect an earlier version with `jj --no-pager --color=never show --git <commit-id>` or build a new change from one with `jj new <commit-id>`. Prefer this targeted approach when unrelated repository work must remain intact.
@@ -421,7 +428,7 @@ Jujutsu respects standard `.gitignore` files in the repository. In addition, you
 
 ### Inspecting Configuration (`jj config`)
 
-Query Jujutsu configuration non-interactively without opening config editors (user config: `~/.config/jj/config.toml`; repo config: `<repo>/.jj/repo/config.toml`):
+Query Jujutsu configuration non-interactively without opening config editors (user config: `~/.config/jj/config.toml`; repo config: `<repo>/.jj/repo/config.toml`). Never run `jj config edit` (`jj config e`), which opens `ui.editor`:
 
 ```bash
 # List all active configuration settings (from user and repo configs)
@@ -715,12 +722,12 @@ Before considering work done:
 | View status / log | `jj --no-pager --color=never status` / `jj --no-pager --color=never log` |
 | View diff / commit | `jj --no-pager --color=never diff --git [paths]` / `jj --no-pager --color=never show --git <id>` |
 | Compare patch revisions | `jj --no-pager --color=never interdiff --from <old> --to <new> --git` |
-| Edit / squash / absorb | `jj edit <id>` / `jj squash -u` / `jj absorb [paths]` (verify with `jj --no-pager --color=never op show -p`) |
+| Edit / squash / absorb | `jj edit <id>` / `jj squash -u` / `jj absorb [paths]` (verify with `jj --no-pager --color=never op show -p --git`) |
 | Rebase / parallelize / dup | `jj rebase --onto <dest>` / `jj parallelize <revs>` / `jj duplicate <id>` |
-| Abandon / clean empty | `jj abandon <id>` / `jj abandon 'empty() & mutable() & ~root() & ~@'` |
+| Abandon / revert / clean | `jj abandon <id>` / `jj revert -r <id> --onto @` / `jj abandon 'empty() & mutable() & ~root() & ~@'` |
 | Undo / redo / op log | `jj undo` / `jj redo` / `jj --no-pager --color=never op log -n 10` |
-| Preview / restore op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <operation-id>` |
-| Change evolution | `jj --no-pager --color=never evolog -p -r <change-id>` |
+| Preview / restore / revert op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <op-id>` / `jj op revert <op-id>` |
+| Change evolution | `jj --no-pager --color=never evolog -p --git -r <change-id>` |
 | File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file search -r <id> <pattern>` / `jj restore [paths]` |
 | File untrack / delete | `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
 | Inspect config | `jj --no-pager --color=never config list [<key>]` / `jj --no-pager --color=never config get <key>` |
