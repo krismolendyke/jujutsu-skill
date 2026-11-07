@@ -128,7 +128,7 @@ jj --no-pager --color=never status
   jj --no-pager --color=never config get user.name
   ```
 - **Git Hooks & `jj fix` Awareness**: Jujutsu snapshots work continuously without triggering Git `pre-commit` hooks. Agents must run linters, formatters, and tests directly before finishing work (or use `jj fix -s 'roots(trunk()..@)'` when `fix.tools` is configured).
-- **Filesets, Historical Search & Local Ignore**: Query tracked files, read or search historical file contents (`jj --no-pager --color=never file show`, `jj --no-pager --color=never file search`), scope path expressions with filesets (`'glob:"**/*.ts"'`, `'src/ & ~src/generated/'`), and manage untracked agent artifacts via `.jj/ignore`.
+- **Filesets, Historical Search & Local Ignore**: Query tracked files, read or search historical file contents (`jj --no-pager --color=never file show`, `jj --no-pager --color=never file search -r <id> -p <pattern>`), scope path expressions with filesets (`'glob:"**/*.ts"'`, `'src/ & ~src/generated/'`), and manage untracked agent artifacts via `.jj/ignore`.
 - **Diagnostic Revsets**: Ready-to-use cheat sheet for stack queries (`trunk()..@`, `heads()`, `roots()`), merge conflicts (`conflicts()`), divergent revisions (`divergent()`), unpushed changes (`remote_bookmarks()..`), and empty mutable commit cleanup:
   ```bash
   # Abandon empty mutable commits (excluding root and @)
@@ -136,7 +136,7 @@ jj --no-pager --color=never status
   ```
 
 ### 8. Optional `PreToolUse` Guardrail Hook (`scripts/check-jj-cmd.sh`)
-- Bundles a fast, token-aware guardrail script (`jujutsu/scripts/check-jj-cmd.sh`) that deterministically blocks interactive flags (`-i`, `--interactive`, `--editor`, `--tool`), TUI/editor/merge commands (`jj arrange`, `jj file edit`, `jj config edit`, `jj resolve`, bare `jj desc`/`commit`/`ci`/`squash`/`converge`/`git push`, incomplete `jj revert`), unescaped hyphen-prefixed `-m "- ..."` arguments, forbidden flags (`--ignore-immutable`, `--allow-cross-workspace`), compound shell operators (`&&`, `||`, `|`, `$()`), and output/diff commands missing `--no-pager --color=never` or `--git`/`--stat` (including `-p`/`--patch` and `op diff`).
+- Bundles a fast, token-aware guardrail script (`jujutsu/scripts/check-jj-cmd.sh`) that deterministically blocks interactive flags (`-i`, `--interactive`, `--editor`, `--tool`), TUI/editor/merge commands (`jj arrange`, `jj file edit`, `jj config edit`, `jj resolve`, bare `jj desc`/`commit`/`ci`/`squash`/`converge`/`git push`, incomplete `jj revert`/`interdiff`/`file search`), unescaped hyphen-prefixed `-m "- ..."` arguments, forbidden flags and subcommands (`--ignore-immutable`, `--allow-cross-workspace`, `--color-words`, `jj unsign`), raw `git` commands inside `.jj/` repositories, compound shell operators or inline env wrappers (`&&`, `||`, `;`, `|`, `$()`, `VAR=val jj ...`), and output/diff commands missing `--no-pager --color=never` or `--git`/`--stat` (including `-p`/`--patch` and `op diff`).
 - Works out of the box with both **Claude Code** (`~/.claude/settings.json`) and **Antigravity** (`~/.gemini/config/hooks.json` or `.agents/hooks.json`):
 
 ```json

@@ -8,6 +8,7 @@ Supports:
 """
 
 import json
+from pathlib import Path
 import re
 import shlex
 import sys
@@ -63,6 +64,29 @@ GLOBAL_VALUE_FLAGS = {
     "--config-file",
 }
 
+ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def is_jj_repo() -> bool:
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        return False
+    return any((p / ".jj").exists() for p in (cwd, *cwd.parents))
+
+
+def is_cmd_name(token: str, name: str) -> bool:
+    return token == name or token.endswith(f"/{name}")
+
+
+def split_shell_tokens(command: str) -> list[str] | None:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return None
+
 
 def validate_command(cmd: str) -> str | None:
     stripped = cmd.strip()
@@ -75,27 +99,81 @@ def validate_command(cmd: str) -> str | None:
             "Do not wrap 'jj' in command substitution ($() or backticks); "
             "it breaks Bash(jj *) permissions. Run jj directly and pass literal output."
         )
-    if re.search(r"(?:^|[;&|]+)\s*cd\s+[^;&|]+&&\s*jj\b", stripped):
+    if re.search(r"(?:^|[;&|]+)\s*cd\s+[^;&|]+[;&|]+\s*jj\b", stripped):
         return (
             "Do not chain 'cd <dir> && jj ...'; it breaks Bash(jj *) and fails across "
             "stateless shell calls. Use 'jj -R <workspace-path> ...' instead."
         )
 
-    try:
-        tokens = shlex.split(stripped)
-    except ValueError:
+    raw_tokens = split_shell_tokens(stripped)
+    if not raw_tokens:
         return None
 
-    if not tokens or tokens[0] != "jj":
+    # Split into simple command segments separated by ;, &, &&, |, ||
+    segments: list[list[str]] = []
+    separators: list[str] = []
+    current: list[str] = []
+    for tok in raw_tokens:
+        if set(tok) <= {";", "&", "|"}:
+            separators.append(tok)
+            if current:
+                segments.append(current)
+                current = []
+        else:
+            current.append(tok)
+    if current:
+        segments.append(current)
+
+    if not segments:
         return None
 
-    # Reject compound shell operators in a jj command line
-    for op in ("&&", "||", ";", "|"):
-        if op in tokens:
+    has_cd_segment = False
+    jj_segment_info: tuple[list[str], list[str]] | None = None
+    has_git_segment = False
+
+    for seg in segments:
+        env_prefix: list[str] = []
+        idx = 0
+        while idx < len(seg) and ENV_ASSIGNMENT_RE.match(seg[idx]):
+            env_prefix.append(seg[idx])
+            idx += 1
+        cmd_tokens = seg[idx:]
+        if not cmd_tokens:
+            continue
+        head = cmd_tokens[0]
+        if head == "cd":
+            has_cd_segment = True
+        elif is_cmd_name(head, "jj") and jj_segment_info is None:
+            jj_segment_info = (env_prefix, cmd_tokens)
+        elif is_cmd_name(head, "git"):
+            has_git_segment = True
+
+    if jj_segment_info is not None:
+        env_prefix, tokens = jj_segment_info
+        if separators:
+            if has_cd_segment:
+                return (
+                    "Do not chain 'cd <dir>' with 'jj'; it breaks Bash(jj *) and fails across "
+                    "stateless shell calls. Use 'jj -R <workspace-path> ...' instead."
+                )
+            op = separators[0]
             return (
                 f"Do not chain or pipe 'jj' commands with '{op}'; compound commands "
                 "fall outside Bash(jj *). Use native jj flags (-n, -r, -T, -R, jj commit -m)."
             )
+        if env_prefix:
+            return (
+                "Do not prefix 'jj' with inline environment variable assignments "
+                f"('{env_prefix[0]} jj ...'); it breaks Bash(jj *) permissions."
+            )
+    else:
+        if has_git_segment and is_jj_repo():
+            return (
+                "This is a Jujutsu (.jj) repository. Do not run raw 'git' commands "
+                "(they fall outside Bash(jj *) and can corrupt colocated state); "
+                "use 'jj' equivalents instead."
+            )
+        return None
 
     # Parse global flags vs subcommand
     has_no_pager = False
@@ -109,12 +187,22 @@ def validate_command(cmd: str) -> str | None:
         if tok == "--no-pager":
             has_no_pager = True
             i += 1
-        elif tok == "--color=never":
+        elif tok.startswith("--color="):
+            color_val = tok.split("=", 1)[1]
+            if color_val != "never":
+                return (
+                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
+                    "so captured output is not wrapped in ANSI codes."
+                )
             has_color_never = True
             i += 1
         elif tok == "--color" and i + 1 < len(tokens):
-            if tokens[i + 1] == "never":
-                has_color_never = True
+            if tokens[i + 1] != "never":
+                return (
+                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
+                    "so captured output is not wrapped in ANSI codes."
+                )
+            has_color_never = True
             i += 2
         elif tok in ("-h", "--help", "-V", "--version"):
             if tok in ("-h", "--help"):
@@ -177,6 +265,28 @@ def validate_command(cmd: str) -> str | None:
             return (
                 "Do not pass '--allow-cross-workspace'; it can revert work in another workspace."
             )
+        if arg == "--no-pager":
+            has_no_pager = True
+        if arg.startswith("--color="):
+            color_val = arg.split("=", 1)[1]
+            if color_val != "never":
+                return (
+                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
+                    "so captured output is not wrapped in ANSI codes."
+                )
+            has_color_never = True
+        if arg == "--color" and idx + 1 < len(args):
+            if args[idx + 1] != "never":
+                return (
+                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
+                    "so captured output is not wrapped in ANSI codes."
+                )
+            has_color_never = True
+        if arg == "--color-words":
+            return (
+                "Do not pass '--color-words'; under '--color=never' it omits +/- markers "
+                "and makes additions and deletions indistinguishable. Use '--git' instead."
+            )
         if arg in ("-i", "--interactive", "--editor", "--tool") or arg.startswith("--tool="):
             return (
                 f"Never pass '{arg}'; interactive prompts and external editors hang agent sessions."
@@ -198,6 +308,12 @@ def validate_command(cmd: str) -> str | None:
                 )
         if arg in ("-h", "--help"):
             has_help = True
+
+    if sub1 == "unsign" and not has_help:
+        return (
+            "Do not run 'jj unsign' to drop cryptographic signatures; "
+            "stop and report signing errors."
+        )
 
     # Subcommand-specific interactive checks
     if (
@@ -247,6 +363,7 @@ def validate_command(cmd: str) -> str | None:
             "-r", "--revision", "-o", "--onto", "-d", "--destination",
             "-A", "--insert-after", "--after", "-B", "--insert-before", "--before",
             "-m", "--message",
+            *GLOBAL_VALUE_FLAGS,
         }
         for a in args:
             if skip_next:
@@ -283,6 +400,29 @@ def validate_command(cmd: str) -> str | None:
             return (
                 "Always pass both '-r <revset>' and a destination flag "
                 "('--onto', '-A', or '-B') to 'jj revert' (e.g. 'jj revert -r <id> --onto @')."
+            )
+
+    if sub1 == "interdiff" and not has_help:
+        endpoint_flags = ("-f", "--from", "-t", "--to")
+        if not any(
+            a in endpoint_flags
+            or a.startswith(("-f", "-t"))
+            or any(a.startswith(f + "=") for f in endpoint_flags)
+            for a in args
+        ):
+            return "Always pass '--from <rev>' and/or '--to <rev>' to 'jj interdiff'."
+
+    if sub1 == "file" and sub2 == "search" and not has_help:
+        search_args = rest[2:]
+        if not any(
+            a in ("-p", "--pattern")
+            or a.startswith("-p")
+            or a.startswith("--pattern=")
+            for a in search_args
+        ):
+            return (
+                "Always pass '-p <pattern>' (or '--pattern <pattern>') to 'jj file search' "
+                "(positional arguments are fileset paths)."
             )
 
     if sub1 == "git" and sub2 == "push" and not has_help:

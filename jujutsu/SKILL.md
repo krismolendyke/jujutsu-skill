@@ -52,7 +52,7 @@ Editor-based commands will fail in non-interactive environments.
    - Use `jj commit -m "..."` (or separate tool calls) instead of `jj desc -m "..." && jj new`.
    - Limit output with `jj log -n <N>`, `-r`, or `-T` instead of piping to `head` or `grep`.
 
-9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, `revsets.git-sign-on-push`, or `git.sign-on-push`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `revsets.git-sign-on-push = "~signed() & mine()"`); leave that alone too.
+9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, `revsets.git-sign-on-push`, or `git.sign-on-push`, do not run `jj unsign`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `revsets.git-sign-on-push = "~signed() & mine()"`); leave that alone too.
 
 *(Optional Guardrail Hook: [`./scripts/check-jj-cmd.sh`](./scripts/check-jj-cmd.sh) can be wired into Claude Code or Antigravity `PreToolUse` hooks to deterministically block interactive flags, missing `--no-pager --color=never`, or forbidden flags before execution).*
 
@@ -401,8 +401,8 @@ jj --no-pager --color=never file list -r <change-id>
 # Print file contents from a specific historical revision directly to stdout
 jj --no-pager --color=never file show -r <change-id> path/to/file.txt
 
-# Search file contents at a revision without checking it out (detects binary files in 0.47.0+)
-jj --no-pager --color=never file search -r <change-id> <pattern> [paths]
+# Search file contents at a revision without checking it out (-p/--pattern is required; detects binary files in 0.47.0+)
+jj --no-pager --color=never file search -r <change-id> -p <pattern> [paths]
 
 # Stop tracking a file without deleting it from the filesystem.
 # The path must already match an ignore rule.
@@ -728,7 +728,7 @@ Before considering work done:
 | Undo / redo / op log | `jj undo` / `jj redo` / `jj --no-pager --color=never op log -n 10` |
 | Preview / restore / revert op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <op-id>` / `jj op revert <op-id>` |
 | Change evolution | `jj --no-pager --color=never evolog -p --git -r <change-id>` |
-| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file search -r <id> <pattern>` / `jj restore [paths]` |
+| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file search -r <id> -p <pattern>` / `jj restore [paths]` |
 | File untrack / delete | `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
 | Inspect config | `jj --no-pager --color=never config list [<key>]` / `jj --no-pager --color=never config get <key>` |
 | Bookmarks | `jj bookmark set <name> -r <target>` / `jj bookmark advance [--to <target>]` / `jj bookmark track <name>@<remote>` |
