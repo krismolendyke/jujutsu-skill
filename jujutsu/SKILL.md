@@ -42,17 +42,17 @@ Editor-based commands will fail in non-interactive environments.
 
 5. **Never run `git checkout`/`git switch` to "fix" detached HEAD**: In colocated repos (`.jj/` + `.git/`), Git HEAD is intentionally detached to point at jj's `@` or `@-`. Linters or tools reporting "detached HEAD" are encountering normal jj operation. Do not attempt to checkout git branches.
 
-6. **Always finish by creating a new empty commit (`jj new`)**: Never leave the working copy (`@`) pointing to a completed commit. When you are done with your task or changes, always run `jj new` to move to a fresh, empty commit so subsequent agent actions or CLI commands do not accidentally modify the completed revision.
+6. **Always finish by creating a new empty commit (`jj new`)**: Never leave `@` pointing to a completed commit. When finished with a task or change, always run `jj new` (or `jj commit -m "..."`) so subsequent commands or edits do not accidentally mutate the completed revision.
 
-7. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
+7. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (`main`, `trunk()`, remote branches) are strictly protected. If an operation fails with `Commit <id> is immutable`, **do NOT bypass it with `--ignore-immutable`**. Instead, branch off with `jj new <base>` or rebase mutable commits onto it.
 
-8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in a shell assignment (`NAME=$(jj ...)`), prefix it with `cd <dir> && jj ...` or `VAR=val jj ...`, chain commands with `&&`, `||`, `;`, or newlines, pipe output (`| head`, `| grep`), or run `jj util exec`. Compound shell commands do not match `Bash(jj *)` and trigger permission prompts. Instead:
+8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in command substitution (`NAME=$(jj ...)`), subshells, `env`/`sh -c`, `cd <dir> && jj ...`, or `VAR=val jj ...`; do not chain commands with `&&`, `||`, `;`, or newlines; do not pipe output (`| head`, `| grep`); and do not run `jj util exec`. Instead:
    - Read values from `jj` output and pass them back as literals, or use revsets directly.
    - Target another workspace with `jj -R <workspace-path> ...` instead of `cd <workspace-path> && jj ...`.
    - Use `jj commit -m "..."` (or separate tool calls) instead of `jj desc -m "..." && jj new`.
    - Limit output with `jj log -n <N>`, `-r`, or `-T` instead of piping to `head` or `grep`.
 
-9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, `revsets.git-sign-on-push`, or `git.sign-on-push`, do not run `jj unsign`, and do not retry with signing turned off. Some configs sign at push time (`signing.behavior = "drop"` and `revsets.git-sign-on-push = "~signed() & mine()"`); leave that alone too.
+9. **Do not disable signing**: If a command fails with an SSH sign or 1Password error (`op-ssh-sign`, "Could not connect to socket"), stop and report it. Do not pass `--config` to change `signing.behavior`, `revsets.git-sign-on-push`, or `git.sign-on-push`, do not run `jj unsign`, and do not retry with signing turned off. Leave push-time signing configs (`signing.behavior = "drop"` with `revsets.git-sign-on-push = "~signed() & mine()"`) intact.
 
 *(Optional Guardrail Hook: [`./scripts/check-jj-cmd.sh`](./scripts/check-jj-cmd.sh) can be wired into Claude Code or Antigravity `PreToolUse` hooks to deterministically block interactive flags, missing `--no-pager --color=never`, or forbidden flags before execution).*
 
@@ -258,7 +258,7 @@ jj --no-pager --color=never log -r '@::'
 jj --no-pager --color=never status
 ```
 
-If the tree-equivalence diff is not empty or tests fail, stop: do not abandon `<target>`. The original change still preserves the complete content. Correct the reconstructed commits, or use `jj undo` to reverse the most recent operation, then repeat verification.
+If the tree-equivalence diff is non-empty or tests fail, stop and do not abandon `<target>` (which still holds the full content). Fix the reconstructed commits or run `jj undo`, then re-verify.
 
 ### Absorbing Changes
 
@@ -327,17 +327,17 @@ jj op restore <operation-id>
 jj op revert <operation-id>
 ```
 
-Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation (prefer `jj op revert <operation-id>` when reversing a single historical operation). Preview with `--at-op` first to confirm what will be restored. Never run `jj op abandon`, which permanently destroys operation log history.
+Use operation-level recovery carefully: `jj op restore` rolls back the entire repository and can undo unrelated later work (prefer `jj op revert <operation-id>` to reverse a single operation). Preview with `--at-op` first. Never run `jj op abandon`, which permanently destroys operation history.
 
-As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace (`jj workspace add` is attributed to the workspace it was run in as of 0.47.0). If `undo`/`redo` refuses due to another workspace, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
+As of jj 0.46.0, `jj undo` and `jj redo` refuse operations performed in another workspace (`jj workspace add` is attributed to the calling workspace in 0.47.0+). If `undo`/`redo` refuses due to another workspace, stop and report it; never pass `--allow-cross-workspace`.
 
-For a targeted view of how one change evolved across rewrites, inspect its evolution log:
+To inspect how a single change evolved across rewrites without affecting other repo work:
 
 ```bash
 jj --no-pager --color=never evolog -p --git -r <change-id>
 ```
 
-Use the displayed commit IDs to inspect an earlier version with `jj --no-pager --color=never show --git <commit-id>` or build a new change from one with `jj new <commit-id>`. Prefer this targeted approach when unrelated repository work must remain intact.
+Inspect an earlier commit ID with `jj --no-pager --color=never show --git <commit-id>` or branch off it with `jj new <commit-id>`.
 
 ### Rebasing Commits
 
@@ -532,16 +532,15 @@ When coordinating parallel subagents, use `jj workspace` to give each agent an i
 
 #### 0. Choose the Workspace Location (Trust Boundary)
 
-Agent tools (Claude Code, Cursor, Antigravity, and others) grant file trust to the directory the session was launched in and everything beneath it. A sibling such as `../agent-db` is outside that boundary, triggering permission prompts on every file read/write.
+Agent tools (Claude Code, Cursor, Antigravity) grant file trust to the session launch directory and its subtree. Sibling paths like `../agent-db` fall outside that boundary and trigger per-file permission prompts.
 
 **Put workspaces inside the coordinator's launch directory, under `.jj-workspaces/`.**
 
-- Every tool already trusts that tree, so no per-tool allowlist or settings change is needed.
-- jj 0.46.0 does not snapshot a nested workspace into the parent's working copy (`jj status` and `jj file list` stay clean without any ignore rule).
-- Git-side tools, editors, and `rg`-style indexers still need `.jj-workspaces/` ignored. Prefer a global ignore (Git's `core.excludesFile`) or add `/.jj-workspaces/` to `.git/info/exclude` once. Both are local and untracked. Do not add it to tracked `.gitignore` unless asked.
-- `jj workspace add` does not create intermediate directories. Create `.jj-workspaces/` once before the first `add` (`mkdir -p` is outside `Bash(jj *)`, so ask the user to approve it rather than widening permissions).
-- In harnesses with built-in subagent workspace modes (e.g. Antigravity's `Workspace: "inherit"` or Claude Code's git-only `.claude/worktrees/`), keep the harness workspace set to `inherit` and manage isolation through `.jj-workspaces/<agent>`.
-- If workspaces must live outside the launch directory, the user must configure tool-specific directory grants (e.g. `--add-dir` in Claude Code); never edit settings files or enable `bypassPermissions`.
+- Tools already trust that subtree without per-tool allowlists or settings changes.
+- jj 0.46.0+ does not snapshot nested workspaces into the parent (`jj status` and `jj file list` stay clean).
+- For Git-side tools, editors, and `rg`, ignore `.jj-workspaces/` via global `core.excludesFile` or local `.git/info/exclude` (do not edit tracked `.gitignore` unless asked).
+- `jj workspace add` does not create parent directories; create `.jj-workspaces/` once first (`mkdir -p` is outside `Bash(jj *)`, so ask the user to approve it).
+- Keep harness workspace modes set to `inherit` (e.g. Antigravity `Workspace: "inherit"`) and manage isolation via `.jj-workspaces/<agent>`. Never edit harness settings files or enable `bypassPermissions`.
 
 #### 1. Setup from Coordinator Workspace
 

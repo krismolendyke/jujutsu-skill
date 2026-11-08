@@ -52,6 +52,7 @@ OUTPUT_SUBCOMMANDS = {
     ("git", "root"),
     ("git", "remote", "list"),
     ("git", "colocation", "status"),
+    ("util", "diff"),
 }
 
 GLOBAL_VALUE_FLAGS = {
@@ -78,6 +79,13 @@ GLOBAL_BOOL_FLAGS = {
 }
 
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+FAST_VCS_RE = re.compile(r"\b(?:jj|git)\b")
+CLUSTERED_INTERACTIVE_RE = re.compile(r"^-[iukpswb]+$")
+CLUSTERED_SQUASH_U_RE = re.compile(r"^-[uk]+$")
+CLUSTERED_PATCH_RE = re.compile(r"^-[Gsp]+$")
+
+CMD_WRAPPERS = {"env", "command", "builtin", "exec", "nohup", "nice", "time", "timeout", "stdbuf"}
+SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "ksh"}
 
 
 def is_jj_repo() -> bool:
@@ -112,7 +120,7 @@ def split_shell_tokens(command: str) -> list[str] | None:
 
 def validate_command(cmd: str) -> str | None:
     stripped = cmd.strip()
-    if not stripped:
+    if not stripped or not FAST_VCS_RE.search(stripped):
         return None
 
     # Check shell wrappers around jj before tokenizing
@@ -121,13 +129,18 @@ def validate_command(cmd: str) -> str | None:
             "Do not wrap 'jj' in command substitution ($() or backticks); "
             "it breaks Bash(jj *) permissions. Run jj directly and pass literal output."
         )
-    if re.search(r"(?:^|[;&|\n]+)\s*cd\s+[^;&|\n]+[;&|\n]+\s*jj\b", stripped):
+    if re.search(r"(?:^|[;&|\n(]+)\s*cd\s+[^;&|\n]+[;&|\n]+\s*jj\b", stripped):
         return (
             "Do not chain 'cd <dir> && jj ...'; it breaks Bash(jj *) and fails across "
             "stateless shell calls. Use 'jj -R <workspace-path> ...' instead."
         )
 
     raw_tokens = split_shell_tokens(stripped)
+    if raw_tokens is None:
+        return (
+            "Malformed shell quoting in VCS command; check for unmatched quotes "
+            "or trailing backslash escapes."
+        )
     if not raw_tokens:
         return None
 
@@ -154,25 +167,59 @@ def validate_command(cmd: str) -> str | None:
         return None
 
     has_cd_segment = False
+    has_jj_wrapper = False
     jj_segment_info: tuple[list[str], list[str]] | None = None
     has_git_segment = False
 
     for seg in segments:
+        cleaned_seg = list(seg)
+        seg_wrapped = False
+        while cleaned_seg and cleaned_seg[0] in ("(", "{"):
+            seg_wrapped = True
+            cleaned_seg.pop(0)
+        if cleaned_seg and cleaned_seg[0].startswith("(") and len(cleaned_seg[0]) > 1:
+            seg_wrapped = True
+            cleaned_seg[0] = cleaned_seg[0].lstrip("(")
+        if cleaned_seg and cleaned_seg[-1].endswith(")") and not cleaned_seg[-1].endswith("()"):
+            # Strip trailing subshell ')' when segment opened a subshell or wraps jj/git
+            if seg_wrapped:
+                cleaned_seg[-1] = cleaned_seg[-1].rstrip(")")
+
         env_prefix: list[str] = []
         idx = 0
-        while idx < len(seg) and ENV_ASSIGNMENT_RE.match(seg[idx]):
-            env_prefix.append(seg[idx])
+        while idx < len(cleaned_seg) and ENV_ASSIGNMENT_RE.match(cleaned_seg[idx]):
+            env_prefix.append(cleaned_seg[idx])
             idx += 1
-        cmd_tokens = seg[idx:]
+        cmd_tokens = cleaned_seg[idx:]
         if not cmd_tokens:
             continue
         head = cmd_tokens[0]
+        base_head = head.rsplit("/", 1)[-1]
         if head == "cd":
             has_cd_segment = True
         elif is_cmd_name(head, "jj") and jj_segment_info is None:
+            if seg_wrapped:
+                has_jj_wrapper = True
             jj_segment_info = (env_prefix, cmd_tokens)
         elif is_cmd_name(head, "git"):
             has_git_segment = True
+        elif base_head in CMD_WRAPPERS:
+            if any(is_cmd_name(t, "jj") for t in cmd_tokens[1:]):
+                has_jj_wrapper = True
+            if any(is_cmd_name(t, "git") for t in cmd_tokens[1:]):
+                has_git_segment = True
+        elif base_head in SHELL_WRAPPERS and "-c" in cmd_tokens[1:]:
+            joined_sub = " ".join(cmd_tokens[1:])
+            if re.search(r"\bjj\b", joined_sub):
+                has_jj_wrapper = True
+            if re.search(r"\bgit\b", joined_sub):
+                has_git_segment = True
+
+    if has_jj_wrapper:
+        return (
+            "Do not wrap 'jj' in subshells, brace groups, 'env'/'command', or 'sh -c'; "
+            "invoke 'jj' directly so it matches Bash(jj *)."
+        )
 
     if jj_segment_info is not None:
         env_prefix, tokens = jj_segment_info
@@ -211,6 +258,9 @@ def validate_command(cmd: str) -> str | None:
 
     while i < len(tokens):
         tok = tokens[i]
+        if tok == "--":
+            rest.extend(tokens[i:])
+            break
         if tok == "--no-pager":
             has_no_pager = True
             i += 1
@@ -258,6 +308,16 @@ def validate_command(cmd: str) -> str | None:
                 return (
                     "Do not override signing configuration ('signing.behavior' or 'revsets.git-sign-on-push'); stop and report signing errors."
                 )
+            if any(k in val for k in ("immutable-heads", "immutable_heads")):
+                return (
+                    "Do not override 'revsets.immutable-heads' via '--config'; "
+                    "branch off immutable commits with 'jj new <base>'."
+                )
+            if any(k in val for k in ("ui.editor", "ui.diff-editor", "ui.merge-editor")):
+                return (
+                    "Do not override editor configuration via '--config'; "
+                    "use '-m' or non-interactive flags instead."
+                )
             i += 1 if "=" in tok else 2
         elif tok.startswith("-R") and len(tok) > 2:
             i += 1
@@ -289,19 +349,34 @@ def validate_command(cmd: str) -> str | None:
         else None
     )
     args = rest[1:]
+    if "--" in args:
+        dd_idx = args.index("--")
+        opt_args = args[:dd_idx]
+        pos_after_dd = args[dd_idx + 1 :]
+    else:
+        opt_args = args
+        pos_after_dd = []
 
-    # Subcommand argument validation
-    for idx, arg in enumerate(args):
+    # Subcommand argument validation (only before '--')
+    for idx, arg in enumerate(opt_args):
         if arg == "--color-words":
             return (
                 "Do not pass '--color-words'; under '--color=never' it omits +/- markers "
                 "and makes additions and deletions indistinguishable. Use '--git' instead."
             )
-        if arg in ("-i", "--interactive", "--editor", "--tool") or arg.startswith("--tool="):
+        if (
+            arg in ("-i", "--interactive", "--editor", "--tool")
+            or arg.startswith("--tool=")
+            or (
+                sub1 in ("squash", "split", "diff", "restore", "absorb")
+                and "i" in arg
+                and CLUSTERED_INTERACTIVE_RE.match(arg)
+            )
+        ):
             return (
                 f"Never pass '{arg}'; interactive prompts and external editors hang agent sessions."
             )
-        if arg in ("-m", "--message") and idx + 1 < len(args) and args[idx + 1].startswith("-"):
+        if arg in ("-m", "--message") and idx + 1 < len(opt_args) and opt_args[idx + 1].startswith("-"):
             return (
                 "Message text starting with '-' after '-m' is parsed as a CLI flag by jj. "
                 "Use '-m=\"- ...\"' or '--message=\"- ...\"' instead."
@@ -353,7 +428,7 @@ def validate_command(cmd: str) -> str | None:
             "Edit files directly or use non-interactive jj commands."
         )
 
-    if sub1 == "converge" and "--no-interactive" not in args:
+    if sub1 == "converge" and "--no-interactive" not in opt_args:
         return "Always pass '--no-interactive' to 'jj converge'."
 
     def has_msg_flag(arg_list: list[str]) -> bool:
@@ -364,29 +439,33 @@ def validate_command(cmd: str) -> str | None:
             for a in arg_list
         )
 
-    if sub1 in ("desc", "describe") and not has_help and not has_msg_flag(args):
+    if sub1 in ("desc", "describe") and not has_help and not has_msg_flag(opt_args):
         return "Always pass '-m \"...\"' to 'jj desc' to avoid opening an interactive editor."
 
-    if sub1 in ("commit", "ci") and not has_help and not has_msg_flag(args):
+    if sub1 in ("commit", "ci") and not has_help and not has_msg_flag(opt_args):
         return f"Always pass '-m \"...\"' to 'jj {sub1}' to avoid opening an interactive editor."
 
     if sub1 == "squash" and not has_help:
-        has_u = any(a in ("-u", "--use-destination-message") for a in args)
-        if not (has_u or has_msg_flag(args)):
+        has_u = any(
+            a in ("-u", "--use-destination-message")
+            or ("u" in a and bool(CLUSTERED_SQUASH_U_RE.match(a)))
+            for a in opt_args
+        )
+        if not (has_u or has_msg_flag(opt_args)):
             return "Always pass '-u' or '-m \"...\"' to 'jj squash' to avoid opening an editor."
 
     if sub1 == "split" and not has_help:
-        if not has_msg_flag(args):
+        if not has_msg_flag(opt_args):
             return "Always pass '-m \"...\"' and explicit file paths to 'jj split'."
         skip_next = False
-        positional = []
+        positional = list(pos_after_dd)
         value_flags = {
             "-r", "--revision", "-o", "--onto", "-d", "--destination",
             "-A", "--insert-after", "--after", "-B", "--insert-before", "--before",
             "-m", "--message",
             *GLOBAL_VALUE_FLAGS,
         }
-        for a in args:
+        for a in opt_args:
             if skip_next:
                 skip_next = False
                 continue
@@ -481,11 +560,15 @@ def validate_command(cmd: str) -> str | None:
             "workspace list/root, sparse list, git root/remote list/colocation status, --help)."
         )
 
-    # Check --git or --stat on diff/show/interdiff, op diff, and -p/--patch commands
-    has_patch_flag = any(a in ("-p", "--patch") for a in args)
+    # Check --git or --stat on diff/show/interdiff, op diff, util diff, and -p/--patch commands
+    has_patch_flag = any(
+        a in ("-p", "--patch") or ("p" in a and bool(CLUSTERED_PATCH_RE.match(a)))
+        for a in opt_args
+    )
     needs_diff_format = (
         sub1 in ("diff", "show", "interdiff")
         or (sub1 in ("op", "operation") and sub2 == "diff")
+        or (sub1 == "util" and sub2 == "diff")
         or (
             has_patch_flag
             and (
@@ -496,8 +579,12 @@ def validate_command(cmd: str) -> str | None:
     )
     if needs_diff_format and not has_help:
         diff_format_flags = ("--git", "--stat", "--summary", "-s", "--name-only", "--types")
-        if not any(a in diff_format_flags for a in args):
-            target_cmd = f"jj {sub1} {sub2}" if sub1 in ("op", "operation") and sub2 else f"jj {sub1}"
+        if not any(a in diff_format_flags for a in opt_args):
+            target_cmd = (
+                f"jj {sub1} {sub2}"
+                if sub1 in ("op", "operation", "util") and sub2
+                else f"jj {sub1}"
+            )
             return (
                 f"Always pass '--git' (or '--stat') to '{target_cmd}' when rendering diffs "
                 "to bypass external diff formatters and side-by-side output."

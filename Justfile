@@ -40,6 +40,7 @@ check-patterns:
     @! grep -nE "^[[:space:]]*jj [^#]*(--ignore-immutable|--allow-cross-workspace)" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj [^#]*(\|\||&&|\|[[:space:]]*(head|tail|grep|rg|awk|sed|wc|sort|less|more|cat|xargs)\b)" jujutsu/SKILL.md README.md
     @test "$(wc -l < jujutsu/SKILL.md)" -lt 800 || (echo "jujutsu/SKILL.md exceeds 800-line single-read limit" && exit 1)
+    @test "$(wc -c < jujutsu/SKILL.md)" -lt 46080 || (echo "jujutsu/SKILL.md exceeds 46080-byte single-read limit" && exit 1)
     @echo "All pattern checks passed."
 
 check-hook:
@@ -50,21 +51,29 @@ check-hook:
     @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m 'Fix jj resolve and -i handling in status'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj desc -m='- Bullet item with leading hyphen'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj split -r @ -m 'Split file' path/to/file.txt"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj squash -uk"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ -p pattern"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -r 'empty() & ~root()'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -p --git"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -Gp --git"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op show -p --git"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never util diff --git a.txt b.txt"
     @./jujutsu/scripts/check-jj-cmd.sh "jj revert -r @- --onto @"
     @./jujutsu/scripts/check-jj-cmd.sh "npm test"
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff -- --git" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never diff --color-words" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=always status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -p" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -Gp" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op show -p" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never op diff" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never util diff a.txt b.txt" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never interdiff --git" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj squash -i" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj squash -ui" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj split -pi -m 'msg' path/to/file.txt" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj resolve" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj arrange" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj unsign -r @" 2>/dev/null
@@ -78,10 +87,12 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj config edit --user" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj ci" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj desc -m '- Unattached leading hyphen'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj desc -m \"unclosed" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj split --after @- -m 'Missing fileset'" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj split -R .jj-workspaces/agent-db -m 'Missing fileset'" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj revert -r @-" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj rebase --ignore-immutable --onto main" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --config 'revsets.immutable-heads=\"none()\"' rebase --onto main" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj undo --allow-cross-workspace" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file search pattern" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ pattern" 2>/dev/null
@@ -91,6 +102,9 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "echo ok && jj squash -i" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log|head" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "JJ_USER=foo jj desc -m 'msg'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "(jj --no-pager --color=never status)" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "env jj --no-pager --color=never status" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "bash -c 'jj squash -i'" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "git checkout main" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj git push" 2>/dev/null
     @printf '%s' '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj desc -m \"a\"\njj new"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "deny"'
