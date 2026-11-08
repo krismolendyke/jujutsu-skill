@@ -61,7 +61,20 @@ GLOBAL_VALUE_FLAGS = {
     "--at-operation",
     "--color",
     "--config",
+    "--config-toml",
     "--config-file",
+}
+
+GLOBAL_BOOL_FLAGS = {
+    "--no-pager",
+    "-h",
+    "--help",
+    "-V",
+    "--version",
+    "--quiet",
+    "--debug",
+    "--ignore-working-copy",
+    "--no-integrate-operation",
 }
 
 ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
@@ -81,9 +94,18 @@ def is_cmd_name(token: str, name: str) -> bool:
 
 def split_shell_tokens(command: str) -> list[str] | None:
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        normalized = command.replace("\\\r\n", " ").replace("\\\n", " ")
+        lexer = shlex.shlex(normalized, posix=True, punctuation_chars=";&|\n")
+        lexer.whitespace = " \t\r"
         lexer.whitespace_split = True
-        return list(lexer)
+        tokens: list[str] = []
+        prev_lineno = lexer.lineno
+        for tok in lexer:
+            if tokens and lexer.lineno > prev_lineno and "\n" not in tok and tokens[-1] != "\n":
+                tokens.append("\n")
+            tokens.append(tok)
+            prev_lineno = lexer.lineno
+        return tokens
     except ValueError:
         return None
 
@@ -99,7 +121,7 @@ def validate_command(cmd: str) -> str | None:
             "Do not wrap 'jj' in command substitution ($() or backticks); "
             "it breaks Bash(jj *) permissions. Run jj directly and pass literal output."
         )
-    if re.search(r"(?:^|[;&|]+)\s*cd\s+[^;&|]+[;&|]+\s*jj\b", stripped):
+    if re.search(r"(?:^|[;&|\n]+)\s*cd\s+[^;&|\n]+[;&|\n]+\s*jj\b", stripped):
         return (
             "Do not chain 'cd <dir> && jj ...'; it breaks Bash(jj *) and fails across "
             "stateless shell calls. Use 'jj -R <workspace-path> ...' instead."
@@ -109,17 +131,21 @@ def validate_command(cmd: str) -> str | None:
     if not raw_tokens:
         return None
 
-    # Split into simple command segments separated by ;, &, &&, |, ||
+    # Split into simple command segments separated by ;, &, &&, |, ||, or unquoted newline
     segments: list[list[str]] = []
     separators: list[str] = []
     current: list[str] = []
+    pending_sep: str | None = None
     for tok in raw_tokens:
-        if set(tok) <= {";", "&", "|"}:
-            separators.append(tok)
+        if set(tok) <= {";", "&", "|", "\n"}:
             if current:
                 segments.append(current)
                 current = []
+                pending_sep = "newline" if "\n" in tok and tok.strip() == "" else tok.strip() or "newline"
         else:
+            if pending_sep is not None:
+                separators.append(pending_sep)
+                pending_sep = None
             current.append(tok)
     if current:
         segments.append(current)
@@ -175,18 +201,34 @@ def validate_command(cmd: str) -> str | None:
             )
         return None
 
-    # Parse global flags vs subcommand
+    # Single pass to validate & strip global flags anywhere in tokens[1:]
     has_no_pager = False
     has_color_never = False
     has_help = False
+    has_version = False
+    rest: list[str] = []
     i = 1
-    sub_idx = None
 
     while i < len(tokens):
         tok = tokens[i]
         if tok == "--no-pager":
             has_no_pager = True
             i += 1
+        elif tok in ("-h", "--help"):
+            has_help = True
+            i += 1
+        elif tok in ("-V", "--version"):
+            has_version = True
+            i += 1
+        elif tok == "--ignore-immutable":
+            return (
+                "NEVER pass '--ignore-immutable'. Create a new change with 'jj new <base>' "
+                "or rebase mutable commits onto the immutable head."
+            )
+        elif tok == "--allow-cross-workspace":
+            return (
+                "Do not pass '--allow-cross-workspace'; it can revert work in another workspace."
+            )
         elif tok.startswith("--color="):
             color_val = tok.split("=", 1)[1]
             if color_val != "never":
@@ -204,19 +246,6 @@ def validate_command(cmd: str) -> str | None:
                 )
             has_color_never = True
             i += 2
-        elif tok in ("-h", "--help", "-V", "--version"):
-            if tok in ("-h", "--help"):
-                has_help = True
-            i += 1
-        elif tok == "--ignore-immutable":
-            return (
-                "NEVER pass '--ignore-immutable'. Create a new change with 'jj new <base>' "
-                "or rebase mutable commits onto the immutable head."
-            )
-        elif tok == "--allow-cross-workspace":
-            return (
-                "Do not pass '--allow-cross-workspace'; it can revert work in another workspace."
-            )
         elif tok in GLOBAL_VALUE_FLAGS or any(
             tok.startswith(f + "=") for f in GLOBAL_VALUE_FLAGS
         ):
@@ -230,21 +259,28 @@ def validate_command(cmd: str) -> str | None:
                     "Do not override signing configuration ('signing.behavior' or 'revsets.git-sign-on-push'); stop and report signing errors."
                 )
             i += 1 if "=" in tok else 2
-        elif tok.startswith("-"):
+        elif tok.startswith("-R") and len(tok) > 2:
+            i += 1
+        elif tok in GLOBAL_BOOL_FLAGS:
             i += 1
         else:
-            sub_idx = i
-            break
+            rest.append(tok)
+            i += 1
 
-    if sub_idx is None:
-        if any(t in ("-V", "--version") for t in tokens[1:]):
+    if not rest:
+        if has_version:
+            return None
+        if has_help:
+            if not (has_no_pager and has_color_never):
+                return (
+                    "Always pass '--no-pager --color=never' when invoking 'jj --help'."
+                )
             return None
         return (
             "Never invoke bare 'jj' without an explicit subcommand; "
             "pass '--no-pager --color=never <subcommand>'."
         )
 
-    rest = tokens[sub_idx:]
     sub1 = rest[0]
     sub2 = rest[1] if len(rest) > 1 and not rest[1].startswith("-") else None
     sub3 = (
@@ -254,34 +290,8 @@ def validate_command(cmd: str) -> str | None:
     )
     args = rest[1:]
 
-    # Global ban on forbidden flags anywhere in args
+    # Subcommand argument validation
     for idx, arg in enumerate(args):
-        if arg == "--ignore-immutable":
-            return (
-                "NEVER pass '--ignore-immutable'. Branch off with 'jj new <base>' "
-                "or rebase mutable commits."
-            )
-        if arg == "--allow-cross-workspace":
-            return (
-                "Do not pass '--allow-cross-workspace'; it can revert work in another workspace."
-            )
-        if arg == "--no-pager":
-            has_no_pager = True
-        if arg.startswith("--color="):
-            color_val = arg.split("=", 1)[1]
-            if color_val != "never":
-                return (
-                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
-                    "so captured output is not wrapped in ANSI codes."
-                )
-            has_color_never = True
-        if arg == "--color" and idx + 1 < len(args):
-            if args[idx + 1] != "never":
-                return (
-                    "Always use '--color=never' (never '--color=always' or '--color=auto') "
-                    "so captured output is not wrapped in ANSI codes."
-                )
-            has_color_never = True
         if arg == "--color-words":
             return (
                 "Do not pass '--color-words'; under '--color=never' it omits +/- markers "
@@ -296,23 +306,34 @@ def validate_command(cmd: str) -> str | None:
                 "Message text starting with '-' after '-m' is parsed as a CLI flag by jj. "
                 "Use '-m=\"- ...\"' or '--message=\"- ...\"' instead."
             )
-        if arg in ("--config", "--config-toml") or arg.startswith("--config="):
-            val = (
-                arg.split("=", 1)[1]
-                if "=" in arg
-                else (args[idx + 1] if idx + 1 < len(args) else "")
-            )
-            if any(k in val for k in ("signing.behavior", "git-sign-on-push", "sign-on-push")):
-                return (
-                    "Do not override signing configuration ('signing.behavior' or 'revsets.git-sign-on-push'); stop and report signing errors."
-                )
-        if arg in ("-h", "--help"):
-            has_help = True
 
     if sub1 == "unsign" and not has_help:
         return (
             "Do not run 'jj unsign' to drop cryptographic signatures; "
             "stop and report signing errors."
+        )
+
+    if sub1 == "util" and sub2 == "exec" and not has_help:
+        return (
+            "Do not run 'jj util exec'; executing arbitrary external commands via jj "
+            "bypasses the Bash(jj *) command boundary."
+        )
+
+    if sub1 == "config" and sub2 in ("set", "s", "unset", "u") and not has_help:
+        return (
+            f"Do not run 'jj config {sub2}' to persistently mutate user or repository "
+            "configuration files."
+        )
+
+    if sub1 in ("op", "operation") and sub2 == "abandon" and not has_help:
+        return (
+            "Do not run 'jj op abandon'; it permanently destroys operation log history."
+        )
+
+    if sub1 == "git" and sub2 == "colocation" and sub3 == "disable" and not has_help:
+        return (
+            "Do not run 'jj git colocation disable'; keep repositories and workspaces "
+            "colocated so Git-dependent tools continue to work."
         )
 
     # Subcommand-specific interactive checks

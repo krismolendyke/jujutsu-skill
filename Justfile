@@ -32,7 +32,7 @@ check: check-patterns check-hook check-sync
 check-patterns:
     @echo "Checking SKILL.md and README.md for interactive or un-guarded commands..."
     @! grep -nE "^[[:space:]]*jj (squash|split|diff|diffedit|restore|absorb) -i\b" jujutsu/SKILL.md README.md
-    @! grep -nE "^[[:space:]]*jj (file edit|config edit|resolve|arrange|unsign)\b" jujutsu/SKILL.md README.md
+    @! grep -nE "^[[:space:]]*jj (file edit|config (edit|set|unset)|op abandon|operation abandon|util exec|git colocation disable|resolve|arrange|unsign)\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (-R [^[:space:]]+ )?(status|st|diff|show|log|interdiff|evolog|evolution-log|root|op (log|show|diff)|operation (log|show|diff)|file (list|show|search|annotate)|config (list|get|path)|bookmark list|tag list|workspace (list|root)|sparse list)\b" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj (squash|converge|git push)[[:space:]]*$" jujutsu/SKILL.md README.md
     @! grep -nE "^[[:space:]]*jj --no-pager --color=never (diff|show|interdiff|op diff|operation diff)\b" jujutsu/SKILL.md README.md | grep -vE "(--git|--stat)"
@@ -68,7 +68,13 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj resolve" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj arrange" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj unsign -r @" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj util exec -- bash -c 'echo hi'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj config set --user signing.behavior drop" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj op abandon @-" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj git colocation disable" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file edit foo.txt" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj file -R .jj-workspaces/agent-db edit foo.txt" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj op -R .jj-workspaces/agent-db log" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj config edit --user" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj ci" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj desc -m '- Unattached leading hyphen'" 2>/dev/null
@@ -87,6 +93,8 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "JJ_USER=foo jj desc -m 'msg'" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "git checkout main" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj git push" 2>/dev/null
+    @printf '%s' '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj desc -m \"a\"\njj new"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "deny"'
+    @printf '%s' '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj desc \\\n  -m \"a\""}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "allow"'
     @echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj squash -i"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "deny"'
     @echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"jj --no-pager --color=never status"}}}' | ./jujutsu/scripts/check-jj-cmd.sh | grep -q '"decision": "allow"'
     @! (echo '{"tool_input":{"command":"jj squash -i"}}' | ./jujutsu/scripts/check-jj-cmd.sh >/dev/null 2>&1)

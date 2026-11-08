@@ -46,7 +46,7 @@ Editor-based commands will fail in non-interactive environments.
 
 7. **NEVER use or suggest `--ignore-immutable`**: Immutable commits (such as `main`, `trunk()`, or remote branches) are strictly protected. If an operation fails with a `Commit <id> is immutable` error, **do NOT attempt to bypass it with `--ignore-immutable`**. Instead, create a new change on top of the immutable commit using `jj new <base>` or rebase your mutable commits onto it.
 
-8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in a shell assignment (`NAME=$(jj ...)`), prefix it with `cd <dir> && jj ...`, chain commands with `&&`, `||`, or `;`, or pipe output (`| head`, `| grep`). Compound shell commands do not match `Bash(jj *)` and trigger permission prompts. Instead:
+8. **Stay within the declared command boundary**: This skill grants `Bash(jj *)`, not unrestricted shell or Git access. Do not wrap `jj` in a shell assignment (`NAME=$(jj ...)`), prefix it with `cd <dir> && jj ...` or `VAR=val jj ...`, chain commands with `&&`, `||`, `;`, or newlines, pipe output (`| head`, `| grep`), or run `jj util exec`. Compound shell commands do not match `Bash(jj *)` and trigger permission prompts. Instead:
    - Read values from `jj` output and pass them back as literals, or use revsets directly.
    - Target another workspace with `jj -R <workspace-path> ...` instead of `cd <workspace-path> && jj ...`.
    - Use `jj commit -m "..."` (or separate tool calls) instead of `jj desc -m "..." && jj new`.
@@ -327,7 +327,7 @@ jj op restore <operation-id>
 jj op revert <operation-id>
 ```
 
-Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation (prefer `jj op revert <operation-id>` when reversing a single historical operation). Preview with `--at-op` first to confirm what will be restored.
+Use operation-level recovery carefully: `jj op restore` restores the state of the entire repository and can undo unrelated work recorded after that operation (prefer `jj op revert <operation-id>` when reversing a single historical operation). Preview with `--at-op` first to confirm what will be restored. Never run `jj op abandon`, which permanently destroys operation log history.
 
 As of jj 0.46.0, `jj undo` and `jj redo` refuse an operation that was performed in another workspace (`jj workspace add` is attributed to the workspace it was run in as of 0.47.0). If `undo`/`redo` refuses due to another workspace, stop and report it. Do not add `--allow-cross-workspace`; it can revert another workspace's work.
 
@@ -428,7 +428,7 @@ Jujutsu respects standard `.gitignore` files in the repository. In addition, you
 
 ### Inspecting Configuration (`jj config`)
 
-Query Jujutsu configuration non-interactively without opening config editors (user config: `~/.config/jj/config.toml`; repo config: `<repo>/.jj/repo/config.toml`). Never run `jj config edit` (`jj config e`), which opens `ui.editor`:
+Query Jujutsu configuration non-interactively without opening config editors or mutating persistent config files (user config: `~/.config/jj/config.toml`; repo config: `<repo>/.jj/repo/config.toml`). Never run `jj config edit` (`jj config e`), which opens `ui.editor`, and do not run `jj config set` (`s`) or `jj config unset` (`u`):
 
 ```bash
 # List all active configuration settings (from user and repo configs)
