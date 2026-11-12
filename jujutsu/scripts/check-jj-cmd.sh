@@ -83,6 +83,7 @@ FAST_VCS_RE = re.compile(r"\b(?:jj|git)\b")
 CLUSTERED_INTERACTIVE_RE = re.compile(r"^-[iukpswb]+$")
 CLUSTERED_SQUASH_U_RE = re.compile(r"^-[uk]+$")
 CLUSTERED_PATCH_RE = re.compile(r"^-[Gsp]+$")
+CLUSTERED_SEARCH_P_RE = re.compile(r"^-[np]+")
 
 CMD_WRAPPERS = {"env", "command", "builtin", "exec", "nohup", "nice", "time", "timeout", "stdbuf"}
 SHELL_WRAPPERS = {"sh", "bash", "zsh", "dash", "ksh"}
@@ -381,6 +382,20 @@ def validate_command(cmd: str) -> str | None:
                 "Message text starting with '-' after '-m' is parsed as a CLI flag by jj. "
                 "Use '-m=\"- ...\"' or '--message=\"- ...\"' instead."
             )
+        if (
+            sub1 == "file"
+            and sub2 == "search"
+            and (
+                arg in ("-p", "--pattern")
+                or (arg.endswith("p") and bool(CLUSTERED_SEARCH_P_RE.fullmatch(arg)))
+            )
+            and idx + 1 < len(opt_args)
+            and opt_args[idx + 1].startswith("-")
+        ):
+            return (
+                "Search pattern starting with '-' after '-p'/'--pattern' is parsed as a CLI flag by jj. "
+                "Use '-p=\"-...\"' or '--pattern=\"-...\"' instead."
+            )
 
     if sub1 == "unsign" and not has_help:
         return (
@@ -489,12 +504,12 @@ def validate_command(cmd: str) -> str | None:
             a in rev_flags
             or a.startswith("-r")
             or any(a.startswith(f + "=") for f in rev_flags)
-            for a in args
+            for a in opt_args
         )
         has_dest = any(
             a in dest_flags
             or any(a.startswith(f + "=") for f in dest_flags)
-            for a in args
+            for a in opt_args
         )
         if not (has_rev and has_dest):
             return (
@@ -508,16 +523,17 @@ def validate_command(cmd: str) -> str | None:
             a in endpoint_flags
             or a.startswith(("-f", "-t"))
             or any(a.startswith(f + "=") for f in endpoint_flags)
-            for a in args
+            for a in opt_args
         ):
             return "Always pass '--from <rev>' and/or '--to <rev>' to 'jj interdiff'."
 
     if sub1 == "file" and sub2 == "search" and not has_help:
-        search_args = rest[2:]
+        search_args = opt_args[1:]
         if not any(
             a in ("-p", "--pattern")
             or a.startswith("-p")
             or a.startswith("--pattern=")
+            or ("p" in a and bool(CLUSTERED_SEARCH_P_RE.match(a)))
             for a in search_args
         ):
             return (
@@ -526,7 +542,7 @@ def validate_command(cmd: str) -> str | None:
             )
 
     if sub1 == "git" and sub2 == "push" and not has_help:
-        push_args = rest[2:]
+        push_args = opt_args[1:]
         explicit_push_flags = (
             "-b", "--bookmark", "-c", "--change", "-r", "--revisions",
             "--named", "--all", "--tracked", "--deleted",

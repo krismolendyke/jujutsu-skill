@@ -53,6 +53,8 @@ check-hook:
     @./jujutsu/scripts/check-jj-cmd.sh "jj split -r @ -m 'Split file' path/to/file.txt"
     @./jujutsu/scripts/check-jj-cmd.sh "jj squash -uk"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ -p pattern"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -np 'substring:pattern'"
+    @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -n -p='substring:--git'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -r 'empty() & ~root()'"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -p --git"
     @./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never log -Gp --git"
@@ -96,6 +98,8 @@ check-hook:
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj undo --allow-cross-workspace" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj file search pattern" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ pattern" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -p '-foo'" 2>/dev/null
+    @! ./jujutsu/scripts/check-jj-cmd.sh "jj --no-pager --color=never file search -r @ -- -p foo" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "jj --config 'revsets.git-sign-on-push=\"none()\"' git push -b feat" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "cd .jj-workspaces/agent-db && jj --no-pager --color=never status" 2>/dev/null
     @! ./jujutsu/scripts/check-jj-cmd.sh "cd .jj-workspaces/agent-db;jj --no-pager --color=never status" 2>/dev/null

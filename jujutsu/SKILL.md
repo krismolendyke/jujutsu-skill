@@ -390,34 +390,56 @@ jj restore path/to/file.txt
 jj restore --from <change-id> path/to/file.txt
 ```
 
-### Inspecting and Tracking Files (`jj file`)
+### Searching, Inspecting, and Managing Files (`jj file`)
 
-Inspect file state at specific historical revisions without switching branches or checking out working copies:
+Use `jj file` to search, read, blame, and manage tracked files at `@`, historical revisions (`-r <change-id>`), or other workspaces (`-r <ws>@-`) without switching `@` or leaving `Bash(jj *)`:
 
 ```bash
-# List all tracked files at a specific revision
-jj --no-pager --color=never file list -r <change-id>
+# Search tracked files in @ (default) or any revision with 1-based line numbers (-n)
+jj --no-pager --color=never file search -n -p <pattern> [filesets...]
+jj --no-pager --color=never file search -r <change-id> -n -p <pattern> 'src/ & ~src/tests/'
 
-# Print file contents from a specific historical revision directly to stdout
+# Discovery: print only file paths containing a match (--name-only) and skip binaries
+jj --no-pager --color=never file search --name-only --skip-binary -p <pattern>
+
+# Pattern kinds (default is regex; use substring: for literal code with (), [], ., $)
+jj --no-pager --color=never file search -n -p 'substring:validate_command(cmd)'
+jj --no-pager --color=never file search -n -p 'substring-i:todo' 'glob:"**/*.py"'
+jj --no-pager --color=never file search -n -p 'regex-i:^\s*def\s+validate_'
+
+# Leading hyphen in pattern: attach with = so jj does not parse the pattern as a CLI flag
+jj --no-pager --color=never file search -n -p="substring:--color=never"
+
+# List tracked files at a revision (optionally scoped by filesets)
+jj --no-pager --color=never file list -r <change-id> [filesets...]
+
+# Print file contents from a revision directly to stdout
 jj --no-pager --color=never file show -r <change-id> path/to/file.txt
 
-# Search file contents at a revision without checking it out (-p/--pattern is required; detects binary files in 0.47.0+)
-jj --no-pager --color=never file search -r <change-id> -p <pattern> [paths]
+# Show line-by-line blame (source change ID, author, timestamp) for a file
+jj --no-pager --color=never file annotate [-r <change-id>] path/to/file.txt
 
-# Stop tracking a file without deleting it from the filesystem.
-# The path must already match an ignore rule.
+# Set (x) or remove (n) the executable bit on tracked files (stays inside Bash(jj *))
+jj file chmod x [-r <change-id>] path/to/script.sh
+
+# Force-track an ignored or large file, or stop tracking an already-ignored file
+jj file track --include-ignored path/to/file.txt
 jj file untrack path/to/file.txt
 
-# Delete a file from a revision without checking that revision out.
-# Non-interactive. Descendants are rebased onto the updated commit.
+# Delete files or directories from a revision without checking it out (rebases descendants)
 jj file delete -r <change-id> path/to/file.txt
 ```
 
-`jj file edit` always opens `ui.editor`. Do not run it.
+**`jj file search` guidelines for agents**:
+- **Always pass `-p` / `--pattern`**: Positional arguments are fileset paths, not the search pattern.
+- **Pattern syntax defaults to regex**: Escape regex metacharacters or prefix literal searches with `substring:` (or case-insensitive `substring-i:`, `regex-i:`, `exact:`, `glob:*text*` — `glob:` matches the full line).
+- **Zero matches exit `0`**: `jj file search` exits `0` when nothing matches, so never append `|| true`.
+- **Leading `-` in patterns**: Attach hyphen-prefixed patterns with `=` (`-p="-v"` or `--pattern="--git"`), just like `-m="- ..."`.
 
-`jj file untrack` refuses to untrack a path that is not already ignored. First edit `.gitignore` for a shared rule or `.git/info/exclude` for a local rule, verify that the path matches, and only then run `jj file untrack`. `.jj/ignore` is useful for untracked local files, but it does not satisfy `file untrack`'s precondition.
-
-`jj file delete --restore-descendants` keeps descendant file content instead of rebasing the diff. Pass it only when that is the intended result.
+**Other `jj file` rules**:
+- `jj file edit` always opens `ui.editor`. Do not run it.
+- `jj file untrack` refuses paths that are not already ignored. Add the rule to `.gitignore` (shared) or `.git/info/exclude` (local) first; `.jj/ignore` is for untracked local files and does not satisfy `file untrack`.
+- `jj file delete --restore-descendants` preserves descendant file content instead of rebasing the deletion diff; pass it only when intended.
 
 ### Ignoring Files (`.gitignore` vs `.jj/ignore`)
 
@@ -727,8 +749,9 @@ Before considering work done:
 | Undo / redo / op log | `jj undo` / `jj redo` / `jj --no-pager --color=never op log -n 10` |
 | Preview / restore / revert op | `jj --no-pager --color=never status --at-op=<id>` / `jj op restore <op-id>` / `jj op revert <op-id>` |
 | Change evolution | `jj --no-pager --color=never evolog -p --git -r <change-id>` |
-| File inspect / restore | `jj --no-pager --color=never file list -r <id>` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file search -r <id> -p <pattern>` / `jj restore [paths]` |
-| File untrack / delete | `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
+| File search | `jj --no-pager --color=never file search [-r <id>] -n -p 'substring:<text>' [filesets]` (or `--name-only`) |
+| File inspect / blame / restore | `jj --no-pager --color=never file list [-r <id>] [filesets]` / `jj --no-pager --color=never file show -r <id> <path>` / `jj --no-pager --color=never file annotate <path>` / `jj restore [paths]` |
+| File chmod / untrack / delete | `jj file chmod <x\|n> <path>` / `jj file untrack <path>` (must be ignored first) / `jj file delete -r <id> <path>` (never `jj file edit`) |
 | Inspect config | `jj --no-pager --color=never config list [<key>]` / `jj --no-pager --color=never config get <key>` |
 | Bookmarks | `jj bookmark set <name> -r <target>` / `jj bookmark advance [--to <target>]` / `jj bookmark track <name>@<remote>` |
 | Fetch / push | `jj git fetch` / `jj git push --dry-run -b <name>` / `jj git push -b <name>` / `jj git push -c <id>` |
